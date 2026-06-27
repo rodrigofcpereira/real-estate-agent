@@ -1,0 +1,1210 @@
+// =============================================
+//  LF Imóveis – app.js
+//  Dados de exemplo + toda a lógica da interface
+// =============================================
+
+// ---- Configuração Google Sheets (opcional) ----
+const USE_SHEETS = false;
+const SHEETS_CSV_URL = "";
+
+// ---- Servidor backend ----
+const API_BASE = "http://localhost:3000";
+
+// ---- Estado WhatsApp ----
+let waStatus = "desconectado";
+let socket = null;
+
+// ---- Dados de exemplo ----
+const dadosExemplo = [
+  { nome: "Catarina Cursino de Vasconcelos", telefone: "81-99748-4557", apartamento: "1406", nascimento: "01/12/1981", inicioContrato: "05/04/2025", terminoContrato: "05/04/2026", condominio: "Praça dos Jacarandas" },
+  { nome: "Katryane Holanda Marques",        telefone: "87-99147-7552", apartamento: "1405", nascimento: "22/05/1981", inicioContrato: "15/04/2025", terminoContrato: "15/04/2026", condominio: "Praça dos Jacarandas" },
+  { nome: "Katryane Holanda Marques",        telefone: "87-99147-7552", apartamento: "1505", nascimento: "22/05/1981", inicioContrato: "05/04/2025", terminoContrato: "05/04/2026", condominio: "Praça dos Jacarandas" },
+  { nome: "Roberto Alves da Silva",          telefone: "81-98765-4321", apartamento: "0902", nascimento: "15/03/1975", inicioContrato: "01/01/2025", terminoContrato: "01/01/2026", condominio: "Residencial Boa Vista" },
+  { nome: "Fernanda Lima Costa",             telefone: "81-91234-5678", apartamento: "0301", nascimento: "03/06/1990", inicioContrato: "10/02/2025", terminoContrato: "10/02/2026", condominio: "Residencial Boa Vista" },
+  { nome: "Carlos Eduardo Mendes",           telefone: "81-93456-7890", apartamento: "1201", nascimento: "20/08/1985", inicioContrato: "01/03/2024", terminoContrato: "01/03/2025", condominio: "Parque das Flores" },
+  { nome: "Ana Paula Ferreira",              telefone: "81-94567-8901", apartamento: "0504", nascimento: "12/06/1993", inicioContrato: "15/05/2024", terminoContrato: "15/05/2025", condominio: "Parque das Flores" },
+  { nome: "Marcos Vinícius Souza",           telefone: "81-95678-9012", apartamento: "0805", nascimento: "08/11/1980", inicioContrato: "20/06/2024", terminoContrato: "20/06/2025", condominio: "Edifício Central" },
+  { nome: "Juliana Rodrigues Pinto",         telefone: "81-96789-0123", apartamento: "0103", nascimento: "25/06/1988", inicioContrato: "01/07/2024", terminoContrato: "01/07/2025", condominio: "Edifício Central" },
+  { nome: "Paulo Henrique Nascimento",       telefone: "81-97890-1234", apartamento: "1102", nascimento: "17/09/1977", inicioContrato: "05/08/2024", terminoContrato: "05/08/2025", condominio: "Torres do Sol" },
+  { nome: "Luciana Barros Cavalcanti",       telefone: "81-98901-2345", apartamento: "0702", nascimento: "30/04/1983", inicioContrato: "10/09/2024", terminoContrato: "10/09/2025", condominio: "Torres do Sol" },
+  { nome: "Diego Farias Monteiro",           telefone: "81-99012-3456", apartamento: "0201", nascimento: "06/06/1991", inicioContrato: "15/10/2024", terminoContrato: "15/10/2025", condominio: "Praça dos Jacarandas" },
+];
+
+// ---- Estado global ----
+let todosOsDados = [];
+let dadosFiltrados = [];
+let chipAtivo = 'todos';
+
+// ---- Inicialização ----
+document.addEventListener("DOMContentLoaded", () => {
+  carregarDados();
+  carregarPropriedades();
+  iniciarSocket();
+
+  // Máscara automática de data (DD/MM/AAAA)
+  ["f-nascimento","f-inicio","f-termino"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", function() {
+      let v = this.value.replace(/\D/g,"");
+      if (v.length > 2) v = v.slice(0,2) + "/" + v.slice(2);
+      if (v.length > 5) v = v.slice(0,5) + "/" + v.slice(5);
+      this.value = v.slice(0,10);
+    });
+  });
+
+  // Máscara de telefone brasileiro (DD) 9XXXX-XXXX ou (DD) XXXX-XXXX
+  const telEl = document.getElementById("f-telefone");
+  if (telEl) {
+    telEl.addEventListener("input", function() {
+      let v = this.value.replace(/\D/g, "");
+
+      // Limita a 11 dígitos (DDD + 9 dígitos celular)
+      v = v.slice(0, 11);
+
+      // Aplica máscara progressiva
+      if (v.length === 0) {
+        this.value = "";
+      } else if (v.length <= 2) {
+        this.value = `(${v}`;
+      } else if (v.length <= 6) {
+        this.value = `(${v.slice(0,2)}) ${v.slice(2)}`;
+      } else if (v.length <= 10) {
+        // Fixo: (DD) XXXX-XXXX
+        this.value = `(${v.slice(0,2)}) ${v.slice(2,6)}-${v.slice(6)}`;
+      } else {
+        // Celular: (DD) 9XXXX-XXXX
+        this.value = `(${v.slice(0,2)}) ${v.slice(2,7)}-${v.slice(7)}`;
+      }
+    });
+
+    // Ao colar números no formato antigo (ex: 81-99748-4557), converter automaticamente
+    telEl.addEventListener("paste", function(e) {
+      setTimeout(() => {
+        this.dispatchEvent(new Event("input"));
+      }, 10);
+    });
+  }
+});
+
+// ---- Carregar dados ----
+async function carregarDados() {
+  // Prioridade: localStorage > Google Sheets > dados de exemplo
+  const salvo = localStorage.getItem("lf_clientes");
+  if (salvo) {
+    try { todosOsDados = JSON.parse(salvo); } catch(e) { todosOsDados = dadosExemplo; }
+  } else if (USE_SHEETS && SHEETS_CSV_URL) {
+    try {
+      const resp = await fetch(SHEETS_CSV_URL);
+      const texto = await resp.text();
+      todosOsDados = parsearCSV(texto);
+    } catch (e) {
+      todosOsDados = dadosExemplo;
+    }
+    salvarLocal();
+  } else {
+    todosOsDados = [...dadosExemplo];
+    salvarLocal();
+  }
+  dadosFiltrados = [...todosOsDados];
+  atualizarKPIs();
+  renderizarTabela(dadosFiltrados);
+}
+
+// ---- Persistir no localStorage ----
+function salvarLocal() {
+  localStorage.setItem("lf_clientes", JSON.stringify(todosOsDados));
+}
+
+// ---- Parser CSV simples ----
+function parsearCSV(texto) {
+  const linhas = texto.trim().split("\n");
+  if (linhas.length < 2) return [];
+  return linhas.slice(1).map(l => {
+    const c = l.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
+    return { nome: c[0]||"", telefone: c[1]||"", apartamento: c[2]||"", nascimento: c[3]||"", inicioContrato: c[4]||"", terminoContrato: c[5]||"", condominio: c[6]||"" };
+  }).filter(r => r.nome);
+}
+
+// ---- Utilitário: parsear data dd/mm/yyyy ----
+function parsarData(str) {
+  if (!str) return null;
+  const p = str.split("/");
+  if (p.length !== 3) return null;
+  return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
+}
+
+// ---- Utilitário: formatar telefone para máscara (DD) XXXXX-XXXX ----
+function formatarTelefone(tel) {
+  if (!tel) return "";
+  let v = tel.replace(/\D/g, "").slice(0, 11);
+  if (v.length === 0) return "";
+  if (v.length <= 2)  return `(${v}`;
+  if (v.length <= 6)  return `(${v.slice(0,2)}) ${v.slice(2)}`;
+  if (v.length <= 10) return `(${v.slice(0,2)}) ${v.slice(2,6)}-${v.slice(6)}`;
+  return `(${v.slice(0,2)}) ${v.slice(2,7)}-${v.slice(7)}`;
+}
+
+// ---- Hoje sem hora ----
+function hoje() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// ---- Checar vencido ----
+function isVencido(r) {
+  const t = parsarData(r.terminoContrato);
+  return t && t < hoje();
+}
+
+// ---- Checar aniversariante hoje ----
+function isAniversariante(r) {
+  const n = parsarData(r.nascimento);
+  const h = hoje();
+  return n && n.getDate() === h.getDate() && n.getMonth() === h.getMonth();
+}
+
+// ---- Atualizar KPIs ----
+function atualizarKPIs() {
+  const total    = todosOsDados.length;
+  const vencidos = todosOsDados.filter(isVencido).length;
+  const ativos   = total - vencidos;
+  const bdays    = todosOsDados.filter(isAniversariante).length;
+
+  document.getElementById("kpiTotal").textContent        = total;
+  document.getElementById("qtdVencidos").textContent     = vencidos;
+  document.getElementById("kpiAtivos").textContent       = ativos;
+  document.getElementById("kpiAniversariantes").textContent = bdays;
+}
+
+// ---- Renderizar tabela ----
+function renderizarTabela(dados) {
+  const tbody  = document.getElementById("corpoTabela");
+  const aviso  = document.getElementById("semResultados");
+  const count  = document.getElementById("tableCount");
+  tbody.innerHTML = "";
+  count.textContent = dados.length;
+
+  if (dados.length === 0) { aviso.style.display = "flex"; return; }
+  aviso.style.display = "none";
+
+  dados.forEach(r => {
+    const tr = document.createElement("tr");
+    const vencido     = isVencido(r);
+    const aniversario = isAniversariante(r);
+
+    if (vencido)     tr.classList.add("vencido");
+    if (aniversario) tr.classList.add("aniversariante");
+
+    let statusBadge;
+    if (aniversario) {
+      statusBadge = `<span class="badge badge-bday">🎂 Aniversário</span>`;
+    } else if (vencido) {
+      statusBadge = `<span class="badge badge-expired">Vencido</span>`;
+    } else {
+      statusBadge = `<span class="badge badge-active">Ativo</span>`;
+    }
+
+    // Índice real no array todosOsDados
+    const idx = todosOsDados.indexOf(r);
+
+    tr.innerHTML = `
+      <td>${r.nome}</td>
+      <td>${r.telefone}</td>
+      <td>${r.apartamento}</td>
+      <td>${r.nascimento}</td>
+      <td>${r.inicioContrato}</td>
+      <td>${r.terminoContrato}</td>
+      <td>${r.condominio}</td>
+      <td>${statusBadge}</td>
+      <td class="td-actions">
+        <div class="row-actions">
+          <button class="btn-icon btn-icon-edit" title="Editar" onclick="editarCliente(${idx})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="btn-icon btn-icon-del" title="Remover" onclick="pedirRemocao(${idx})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            </svg>
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ---- Pesquisar ----
+function pesquisar() {
+  const termo = document.getElementById("campoPesquisa").value.toLowerCase().trim();
+  const btnLimpar = document.getElementById("btnLimpar");
+  btnLimpar.style.display = termo ? "block" : "none";
+  aplicarFiltros(termo);
+}
+
+// ---- Aplicar filtros (chip + pesquisa) ----
+function aplicarFiltros(termoBusca) {
+  const termo = termoBusca !== undefined
+    ? termoBusca
+    : document.getElementById("campoPesquisa").value.toLowerCase().trim();
+
+  let base = [...todosOsDados];
+
+  if (chipAtivo === 'vencidos') {
+    base = base.filter(isVencido);
+  } else if (chipAtivo === 'aniversariantes') {
+    base = base.filter(isAniversariante);
+  }
+
+  if (termo) {
+    base = base.filter(r => Object.values(r).some(v => v.toLowerCase().includes(termo)));
+  }
+
+  dadosFiltrados = base;
+  renderizarTabela(dadosFiltrados);
+}
+
+// ---- Set chip ----
+function setChip(tipo) {
+  chipAtivo = tipo;
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("chip-active"));
+  const chip = document.getElementById("chip-" + tipo);
+  if (chip) chip.classList.add("chip-active");
+  aplicarFiltros();
+}
+
+// ---- Limpar pesquisa ----
+function limparPesquisa() {
+  document.getElementById("campoPesquisa").value = "";
+  document.getElementById("btnLimpar").style.display = "none";
+  aplicarFiltros("");
+}
+
+// ---- Limpar filtros ----
+function limparFiltros() { setChip('todos'); limparPesquisa(); }
+
+// ---- Atualizar dados ----
+async function atualizarDados() {
+  mostrarToast("🔄 Atualizando dados...");
+  await carregarDados();
+  aplicarFiltros();
+  mostrarToast("✅ Dados atualizados!");
+}
+
+// ---- Enviar relatório ----
+function enviarRelatorio(canal) {
+  const vencidos = todosOsDados.filter(isVencido);
+  if (vencidos.length === 0) {
+    mostrarToast("ℹ️ Nenhum contrato vencido encontrado.");
+    return;
+  }
+  const corpo = vencidos.map(r =>
+    `${r.nome} | Apto ${r.apartamento} | ${r.condominio} | Venceu: ${r.terminoContrato} | Tel: ${r.telefone}`
+  ).join("\n");
+
+  try {
+    if (canal === "email") {
+      const assunto   = encodeURIComponent("Relatório de Contratos Vencidos – LF Imóveis");
+      const textoEmail = encodeURIComponent(`Contratos vencidos (${vencidos.length}):\n\n${corpo}`);
+      const abriu = window.open(`mailto:?subject=${assunto}&body=${textoEmail}`, "_blank");
+      if (!abriu) mostrarToast("⚠️ Permita pop-ups no navegador para abrir o e-mail.", "err");
+    } else {
+      const msg   = encodeURIComponent(`*Relatório de Contratos Vencidos – LF Imóveis*\n\n${corpo}`);
+      const abriu = window.open(`https://wa.me/?text=${msg}`, "_blank");
+      if (!abriu) mostrarToast("⚠️ Permita pop-ups no navegador para abrir o WhatsApp.", "err");
+    }
+  } catch (err) {
+    mostrarToast(`❌ Erro ao abrir relatório: ${err.message}`, "err");
+  }
+}
+
+// ---- Modal mensagem ----
+function abrirModal(titulo, texto, links) {
+  document.getElementById("modalTitulo").textContent = titulo;
+  document.getElementById("modalTexto").textContent  = texto;
+  const lista = document.getElementById("modalLista");
+  lista.innerHTML = "";
+  links.forEach(l => {
+    const a = document.createElement("a");
+    a.href = l.url;
+    a.target = "_blank";
+    a.textContent = l.label;
+    lista.appendChild(a);
+  });
+  document.getElementById("modalMsg").style.display = "flex";
+}
+function fecharModal() { document.getElementById("modalMsg").style.display = "none"; }
+
+// ---- Modal escolha de mensagem ----
+function abrirModalMensagem() { document.getElementById("modalEscolha").style.display = "flex"; }
+function fecharModalEscolha() { document.getElementById("modalEscolha").style.display = "none"; }
+
+// ---- Fechar modais clicando fora ----
+document.addEventListener("click", e => {
+  ["modalMsg", "modalEscolha", "modalCliente", "modalConfirm"].forEach(id => {
+    const el = document.getElementById(id);
+    if (e.target === el) el.style.display = "none";
+  });
+});
+
+// ---- Toast ----
+let toastTimer;
+function mostrarToast(msg, tipo = "info") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (tipo === "ok" ? " toast-ok" : tipo === "err" ? " toast-err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
+}
+
+// ==============================================
+//  CRUD – Adicionar / Editar / Remover clientes
+// ==============================================
+
+let clienteParaRemover = -1;
+
+// ---- Abrir form (novo) ----
+function abrirFormCliente() {
+  document.getElementById("formTitulo").textContent  = "Novo cliente";
+  document.getElementById("btnSalvar").textContent   = "Salvar cliente";
+  document.getElementById("clienteIndex").value      = -1;
+  document.getElementById("formCliente").reset();
+  limparErrosForm();
+  document.getElementById("modalCliente").style.display = "flex";
+  setTimeout(() => document.getElementById("f-nome").focus(), 100);
+}
+
+// ---- Abrir form (editar) ----
+function editarCliente(idx) {
+  const r = todosOsDados[idx];
+  if (!r) return;
+
+  document.getElementById("formTitulo").textContent = "Editar cliente";
+  document.getElementById("btnSalvar").textContent  = "Salvar alterações";
+  document.getElementById("clienteIndex").value     = idx;
+
+  document.getElementById("f-nome").value         = r.nome;
+  document.getElementById("f-telefone").value     = formatarTelefone(r.telefone);
+  document.getElementById("f-apartamento").value  = r.apartamento;
+  document.getElementById("f-condominio").value   = r.condominio;
+  document.getElementById("f-nascimento").value   = r.nascimento;
+  document.getElementById("f-inicio").value       = r.inicioContrato;
+  document.getElementById("f-termino").value      = r.terminoContrato;
+
+  limparErrosForm();
+  document.getElementById("modalCliente").style.display = "flex";
+  setTimeout(() => document.getElementById("f-nome").focus(), 100);
+}
+
+// ---- Salvar (criar ou atualizar) ----
+function salvarCliente(e) {
+  e.preventDefault();
+  if (!validarForm()) return;
+
+  const idx = parseInt(document.getElementById("clienteIndex").value);
+  const cliente = {
+    nome:           document.getElementById("f-nome").value.trim(),
+    telefone:       document.getElementById("f-telefone").value.trim(),
+    apartamento:    document.getElementById("f-apartamento").value.trim(),
+    condominio:     document.getElementById("f-condominio").value.trim(),
+    nascimento:     document.getElementById("f-nascimento").value.trim(),
+    inicioContrato: document.getElementById("f-inicio").value.trim(),
+    terminoContrato:document.getElementById("f-termino").value.trim(),
+  };
+
+  if (idx === -1) {
+    todosOsDados.push(cliente);
+    mostrarToast("✅ Cliente adicionado!", "ok");
+  } else {
+    todosOsDados[idx] = cliente;
+    mostrarToast("✅ Cliente atualizado!", "ok");
+  }
+
+  salvarLocal();
+  atualizarKPIs();
+  aplicarFiltros();
+  fecharFormCliente();
+}
+
+// ---- Validar form ----
+function validarForm() {
+  let ok = true;
+  const campos = ["f-nome","f-telefone","f-apartamento","f-condominio","f-nascimento","f-inicio","f-termino"];
+  campos.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el.value.trim()) {
+      el.classList.add("input-error");
+      ok = false;
+    } else {
+      el.classList.remove("input-error");
+    }
+  });
+
+  // Validar formato de data nos campos de data
+  ["f-nascimento","f-inicio","f-termino"].forEach(id => {
+    const el  = document.getElementById(id);
+    const val = el.value.trim();
+    if (val && !/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+      el.classList.add("input-error");
+      ok = false;
+    }
+  });
+
+  if (!ok) mostrarToast("⚠️ Preencha todos os campos corretamente.", "err");
+  return ok;
+}
+
+function limparErrosForm() {
+  document.querySelectorAll(".client-form .input-error").forEach(el => el.classList.remove("input-error"));
+}
+
+// ---- Fechar form ----
+function fecharFormCliente() {
+  document.getElementById("modalCliente").style.display = "none";
+}
+
+// ---- Pedir confirmação de remoção ----
+function pedirRemocao(idx) {
+  const r = todosOsDados[idx];
+  if (!r) return;
+  clienteParaRemover = idx;
+  const tituloEl = document.getElementById("confirm-titulo");
+  if (tituloEl) tituloEl.textContent = "Remover cliente";
+  document.getElementById("confirmNome").textContent = r.nome;
+  document.getElementById("btnConfirmRemover").onclick = confirmarRemocao;
+  document.getElementById("modalConfirm").style.display = "flex";
+}
+
+// ---- Confirmar remoção ----
+function confirmarRemocao() {
+  if (clienteParaRemover < 0) return;
+  const nome = todosOsDados[clienteParaRemover].nome;
+  todosOsDados.splice(clienteParaRemover, 1);
+  clienteParaRemover = -1;
+  salvarLocal();
+  atualizarKPIs();
+  aplicarFiltros();
+  fecharConfirm();
+  mostrarToast(`🗑️ ${nome} removido.`);
+}
+
+function fecharConfirm() {
+  document.getElementById("modalConfirm").style.display = "none";
+  clienteParaRemover = -1;
+}
+
+// ==============================================
+//  WHATSAPP – Socket.io
+// ==============================================
+
+function iniciarSocket() {
+  // Só conecta ao socket se o servidor estiver disponível
+  try {
+    socket = io(API_BASE, { transports: ["websocket"], reconnectionAttempts: 3, timeout: 3000 });
+
+    socket.on("connect", () => {
+      console.log("🔌 Conectado ao servidor");
+    });
+
+    socket.on("connect_error", () => {
+      // Servidor não está rodando – modo offline (WhatsApp web.js indisponível)
+      socket = null;
+    });
+
+    socket.on("wa:status", (data) => {
+      atualizarStatusWA(data.status, data.message);
+    });
+
+    socket.on("wa:qr", (data) => {
+      mostrarQR(data.qr);
+    });
+
+  } catch(e) {
+    socket = null;
+  }
+}
+
+// ---- Timeout visual: mostra botão "Limpar Sessão" se ficar preso em conectando ----
+let _conectandoTimer = null;
+
+function atualizarStatusWA(status, msg = "") {
+  waStatus = status;
+
+  // Cancela o timer de timeout visual a cada mudança de status
+  if (_conectandoTimer) { clearTimeout(_conectandoTimer); _conectandoTimer = null; }
+  const timeoutEl = document.getElementById("wa-connecting-timeout");
+  if (timeoutEl) timeoutEl.style.display = "none";
+
+  // Botão topbar
+  const label  = document.getElementById("btnWALabel");
+  const dot    = document.getElementById("waDot");
+  const dotSm  = document.getElementById("waStatusDot");
+  const txtSm  = document.getElementById("waStatusText");
+
+  const estados = {
+    desconectado: { label: "Conectar WhatsApp", dotClass: "offline", dotSmClass: "red",    txt: "Desconectado" },
+    qr:           { label: "Escaneie o QR",      dotClass: "offline", dotSmClass: "yellow", txt: "Aguardando QR" },
+    conectando:   { label: "Conectando...",       dotClass: "offline", dotSmClass: "yellow", txt: "Conectando..." },
+    autenticado:  { label: "Conectando...",       dotClass: "offline", dotSmClass: "yellow", txt: "Autenticando..." },
+    pronto:       { label: "WhatsApp ativo",      dotClass: "online",  dotSmClass: "green",  txt: "Conectado" },
+    erro:         { label: "Reconectar",          dotClass: "offline", dotSmClass: "red",    txt: "Erro de conexão" },
+  };
+  const e = estados[status] || estados.desconectado;
+  if (label) label.textContent = e.label;
+  if (dot) { dot.className = "wa-dot " + e.dotClass; }
+  if (dotSm) dotSm.className = "wa-dot-sm " + e.dotSmClass;
+  if (txtSm) txtSm.textContent = e.txt + (msg ? " – " + msg : "");
+
+  // Mostrar painel correto dentro do modal
+  const paineis = ["desconectado","qr","conectando","pronto","erro"];
+  paineis.forEach(p => {
+    const el = document.getElementById("wa-state-" + p);
+    if (el) el.style.display = "none";
+  });
+
+  const mapa = { desconectado:"desconectado", qr:"qr", conectando:"conectando",
+                  autenticado:"conectando", pronto:"pronto", erro:"erro" };
+  const painel = document.getElementById("wa-state-" + (mapa[status] || "desconectado"));
+  if (painel) painel.style.display = "flex";
+
+  if (status === "conectando" || status === "autenticado") {
+    const el = document.getElementById("wa-connecting-msg");
+    if (el) el.textContent = msg || "Autenticando sessão, aguarde.";
+
+    // Após 30s preso em "autenticando", mostra botão de limpeza de sessão
+    _conectandoTimer = setTimeout(() => {
+      const te = document.getElementById("wa-connecting-timeout");
+      if (te && (waStatus === "conectando" || waStatus === "autenticado")) te.style.display = "block";
+    }, 30000);
+  }
+  if (status === "erro") {
+    const el = document.getElementById("wa-error-msg");
+    if (el) el.textContent = msg || "Tente reconectar.";
+  }
+  if (status === "pronto") {
+    mostrarToast("✅ WhatsApp conectado com sucesso!", "ok");
+  }
+}
+
+function mostrarQR(qrDataURL) {
+  const img     = document.getElementById("wa-qr-img");
+  const spinner = document.getElementById("wa-qr-spinner");
+  if (img) {
+    img.src = qrDataURL;
+    img.style.display = "block";
+  }
+  if (spinner) spinner.style.display = "none";
+}
+
+// ---- Abrir/fechar modal WA ----
+function abrirModalWA() {
+  if (!socket) {
+    mostrarToast("⚠️ Servidor offline. Inicie com: npm start", "err");
+    return;
+  }
+  document.getElementById("modalWA").style.display = "flex";
+}
+function fecharModalWA() {
+  document.getElementById("modalWA").style.display = "none";
+}
+
+// ---- Iniciar WA (emit) ----
+function iniciarWA() {
+  if (!socket) { mostrarToast("⚠️ Servidor não encontrado.", "err"); return; }
+
+  // Resetar QR
+  const img     = document.getElementById("wa-qr-img");
+  const spinner = document.getElementById("wa-qr-spinner");
+  if (img)     { img.src = ""; img.style.display = "none"; }
+  if (spinner)   spinner.style.display = "flex";
+
+  atualizarStatusWA("qr");
+  socket.emit("wa:iniciar");
+}
+
+// ---- Desconectar WA ----
+function desconectarWA() {
+  if (!socket) return;
+  socket.emit("wa:desconectar");
+}
+
+// ---- Limpar sessão corrompida ----
+async function limparSessaoWA() {
+  if (!socket) { mostrarToast("⚠️ Servidor não encontrado.", "err"); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/limpar-sessao`, { method: "POST" });
+    const data = await resp.json();
+    if (data.ok) {
+      mostrarToast("🗑️ Sessão limpa! Clique em 'Gerar QR Code' para reconectar.", "ok");
+    } else {
+      mostrarToast("❌ Erro ao limpar sessão.", "err");
+    }
+  } catch(e) {
+    mostrarToast("❌ Não foi possível limpar a sessão.", "err");
+  }
+}
+
+// ==============================================
+//  ENVIO DE MENSAGENS – via backend ou WhatsApp Web
+// ==============================================
+
+// ---- Enviar mensagem ----
+async function enviarMensagem(tipo) {
+  const h = hoje();
+  let clientes = [], titulo = "", msgFn = () => "";
+
+  if (tipo === "aniversario") {
+    titulo = "🎂 Mensagem de Aniversário";
+    clientes = todosOsDados.filter(isAniversariante);
+    msgFn = r => `Feliz aniversário, ${r.nome.split(" ")[0]}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
+  } else if (tipo === "contrato_vencido") {
+    titulo = "📋 Aviso de Contrato Vencido";
+    clientes = todosOsDados.filter(isVencido);
+    msgFn = r => `Olá, ${r.nome.split(" ")[0]}! Seu contrato do apartamento ${r.apartamento} venceu em ${r.terminoContrato}. Entre em contato para renovação.`;
+  } else if (tipo === "ano_novo") {
+    titulo = "🎆 Mensagem de Ano Novo";
+    clientes = todosOsDados;
+    msgFn = r => `Feliz Ano Novo, ${r.nome.split(" ")[0]}! 🎆 A LF Imóveis agradece sua confiança e deseja realizações incríveis!`;
+  }
+
+  if (clientes.length === 0) {
+    abrirModal(titulo, "Nenhum cliente encontrado para este filtro.", []);
+    return;
+  }
+
+  // Se WhatsApp conectado via servidor, enviar direto
+  if (waStatus === "pronto" && socket) {
+    await enviarViaBackend(titulo, clientes, msgFn);
+  } else {
+    // Fallback: links WhatsApp Web
+    const links = clientes.map(r => {
+      const tel = r.telefone.replace(/\D/g, "");
+      const msg = encodeURIComponent(msgFn(r));
+      return { label: `📲 ${r.nome} — Apto ${r.apartamento}`, url: `https://wa.me/55${tel}?text=${msg}` };
+    });
+    abrirModal(titulo,
+      `${clientes.length} cliente(s) encontrado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
+      links);
+  }
+}
+
+async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
+  // Monta lista visual no modal
+  document.getElementById("modalTitulo").textContent = titulo;
+  document.getElementById("modalTexto").textContent  = `Enviando para ${clientes.length} cliente(s)...`;
+  const lista = document.getElementById("modalLista");
+  lista.innerHTML = "";
+  lista.className = "send-progress";
+
+  // Criar itens visuais com status "aguardando"
+  clientes.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "send-item";
+    div.id = "send-item-" + i;
+    div.innerHTML = `
+      <span class="send-item-name">${r.nome} <small style="opacity:.6">· Apto ${r.apartamento}</small></span>
+      <span class="send-item-status send-pending" id="send-status-${i}">⏳ Aguardando</span>
+    `;
+    lista.appendChild(div);
+  });
+
+  document.getElementById("modalMsg").style.display = "flex";
+
+  // Enviar em lote via API
+  // As fotos vão uma vez só no body — não duplicadas por destinatário
+  const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
+  const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r) }));
+
+  let data;
+  try {
+    const res = await fetch(`${API_BASE}/api/send-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensagens: payload, fotos: fotosArray })
+    });
+
+    if (!res.ok) {
+      // Erro HTTP (ex: 503 WhatsApp desconectado, 500 interno)
+      let errMsg = `Erro ${res.status}`;
+      try { const e = await res.json(); errMsg = e.erro || errMsg; } catch(_) {}
+      throw new Error(errMsg);
+    }
+
+    data = await res.json();
+  } catch (err) {
+    // Falha de rede ou erro HTTP
+    const isOffline = err.message.includes("fetch") || err.message.includes("Failed");
+    const msgErr = isOffline
+      ? "Não foi possível conectar ao servidor. Verifique se ele está rodando (npm start)."
+      : err.message;
+
+    // Marcar todos como erro
+    clientes.forEach((_, i) => {
+      const el = document.getElementById("send-status-" + i);
+      if (el) { el.textContent = "❌ Não enviado"; el.className = "send-item-status send-err"; }
+    });
+
+    document.getElementById("modalTexto").innerHTML =
+      `<span class="send-error-banner">❌ Falha no envio — ${msgErr}</span>`;
+    return;
+  }
+
+  // Processar resultado de cada item
+  if (data && data.resultados) {
+    let qtdOk = 0, qtdErr = 0;
+
+    data.resultados.forEach((r, i) => {
+      const el = document.getElementById("send-status-" + i);
+      if (!el) return;
+      if (r.ok) {
+        el.textContent = "✅ Enviado";
+        el.className   = "send-item-status send-ok";
+        qtdOk++;
+      } else {
+        // Mostra o motivo do erro de cada item individualmente
+        const motivo = r.erro || "número inválido ou bloqueado";
+        el.textContent = `❌ Erro`;
+        el.className   = "send-item-status send-err";
+        el.title       = motivo; // tooltip com detalhe
+
+        // Adiciona linha de detalhe do erro abaixo do item
+        const item = document.getElementById("send-item-" + i);
+        if (item) {
+          const det = document.createElement("div");
+          det.className = "send-item-error-detail";
+          det.textContent = `↳ ${motivo}`;
+          item.after(det);
+        }
+        qtdErr++;
+      }
+    });
+
+    // Resumo final
+    const textoFinal = qtdErr === 0
+      ? `✅ Todas as ${qtdOk} mensagens enviadas com sucesso!`
+      : qtdOk === 0
+        ? `❌ Nenhuma mensagem foi enviada. Verifique os números.`
+        : `⚠️ ${qtdOk} enviada(s) com sucesso · ${qtdErr} com erro`;
+
+    document.getElementById("modalTexto").innerHTML =
+      `<span class="${qtdErr === 0 ? 'send-summary-ok' : qtdOk === 0 ? 'send-summary-err' : 'send-summary-warn'}">${textoFinal}</span>`;
+  }
+}
+
+// ==============================================
+//  NAVEGAÇÃO ENTRE PÁGINAS
+// ==============================================
+function irPara(pagina) {
+  ['dashboard', 'propriedades'].forEach(p => {
+    const el  = document.getElementById('page-' + p);
+    const nav = document.getElementById('nav-' + p);
+    if (el)  el.style.display = (p === pagina) ? 'flex' : 'none';
+    if (nav) nav.classList.toggle('active', p === pagina);
+  });
+  if (pagina === 'propriedades') renderizarPropriedades();
+}
+
+// ==============================================
+//  PROPRIEDADES
+// ==============================================
+
+let propriedades       = [];
+let propIndexRemover   = -1;
+let propIndexDisparo   = -1;
+
+// ---- Persistência ----
+function carregarPropriedades() {
+  const salvo = localStorage.getItem("lf_propriedades");
+  if (salvo) {
+    try { propriedades = JSON.parse(salvo); } catch(e) { propriedades = []; }
+  }
+}
+
+function salvarPropriedadesLS() {
+  localStorage.setItem("lf_propriedades", JSON.stringify(propriedades));
+}
+
+// ---- Renderizar grid ----
+function renderizarPropriedades() {
+  const grid  = document.getElementById("props-grid");
+  const empty = document.getElementById("props-empty");
+  if (!grid) return;
+
+  if (propriedades.length === 0) {
+    if (empty) empty.style.display = "flex";
+    grid.style.display = "none";
+    grid.innerHTML = "";
+    return;
+  }
+
+  if (empty) empty.style.display = "none";
+  grid.style.display = "grid";
+
+  const tipoClasses = {
+    "Casa":      "prop-tipo-casa",
+    "Cobertura": "prop-tipo-cobertura",
+    "Comercial": "prop-tipo-comercial",
+    "Terreno":   "prop-tipo-terreno",
+  };
+
+  grid.innerHTML = propriedades.map((p, i) => {
+    const tipoClass = tipoClasses[p.tipo] || "";
+    const fotos = Array.isArray(p.fotos) && p.fotos.length ? p.fotos
+                  : (p.foto ? [p.foto] : []);  // compatibilidade com registros antigos
+
+    // ---- área de imagem: carrossel ou placeholder ----
+    let imgAreaHtml;
+    if (fotos.length === 0) {
+      imgAreaHtml = `
+        <div class="prop-img">
+          <svg class="prop-img-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="52" height="52"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>`;
+    } else if (fotos.length === 1) {
+      imgAreaHtml = `
+        <div class="prop-img">
+          <img src="${fotos[0]}" alt="Foto" />
+        </div>`;
+    } else {
+      const slides = fotos.map(f =>
+        `<div class="prop-carousel-slide"><img src="${f}" alt="Foto" /></div>`
+      ).join('');
+      const dots = fotos.map((_, di) =>
+        `<button class="prop-carousel-dot${di === 0 ? ' active' : ''}" onclick="carouselDot(this,${i},${di})"></button>`
+      ).join('');
+      imgAreaHtml = `
+        <div class="prop-carousel" id="carousel-${i}">
+          <div class="prop-carousel-track" id="carousel-track-${i}">${slides}</div>
+          <button class="prop-carousel-btn prev" onclick="carouselPrev(${i})">‹</button>
+          <button class="prop-carousel-btn next" onclick="carouselNext(${i})">›</button>
+          <div class="prop-carousel-dots">${dots}</div>
+          <span class="prop-carousel-counter">1 / ${fotos.length}</span>
+        </div>`;
+    }
+
+    const detalhes = [];
+    if (p.quartos)   detalhes.push(`<span class="prop-detail-item">🛏️ ${p.quartos}</span>`);
+    if (p.banheiros) detalhes.push(`<span class="prop-detail-item">🚿 ${p.banheiros}</span>`);
+    if (p.vagas)     detalhes.push(`<span class="prop-detail-item">🚗 ${p.vagas}</span>`);
+    if (p.area)      detalhes.push(`<span class="prop-detail-item">📐 ${p.area}</span>`);
+
+    const endereco = [p.endereco, p.bairro, p.cidade].filter(Boolean).join(', ');
+
+    return `
+      <div class="prop-card">
+        ${imgAreaHtml}
+        <div class="prop-body">
+          <span class="prop-tipo ${tipoClass}">${p.tipo}</span>
+          <h3 class="prop-titulo">${p.titulo}</h3>
+          ${endereco ? `<p class="prop-endereco">📍 ${endereco}</p>` : ''}
+          ${detalhes.length ? `<div class="prop-details">${detalhes.join('')}</div>` : ''}
+          ${p.descricao ? `<p class="prop-desc">${p.descricao}</p>` : ''}
+          <div class="prop-footer">
+            <span class="prop-preco">${p.preco || '—'}</span>
+            <div class="prop-actions">
+              <button class="btn-icon btn-icon-edit" onclick="abrirFormProp(${i})" title="Editar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="btn-icon btn-icon-del" onclick="confirmarRemoverProp(${i})" title="Remover">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              </button>
+              <button class="btn btn-primary btn-sm-icon" onclick="abrirModalDisparo(${i})" style="font-size:.77rem;padding:6px 11px;gap:5px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Disparar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ---- Formulário de cadastro ----
+function abrirFormProp(idx = -1) {
+  const editando = idx >= 0 && propriedades[idx];
+  document.getElementById("prop-id").value = idx;
+  document.getElementById("prop-form-titulo").textContent = editando ? "Editar propriedade" : "Nova propriedade";
+
+  // Limpa campos
+  ["p-titulo","p-tipo","p-endereco","p-bairro","p-cidade",
+   "p-preco","p-area","p-quartos","p-banheiros","p-vagas","p-desc"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  document.getElementById("p-tipo").value = "Apartamento";
+
+  // Reset fotos
+  fotosTemp = [];
+  renderizarFotosForm();
+  document.getElementById("p-fotos").value = "";
+
+  if (editando) {
+    const p = propriedades[idx];
+    document.getElementById("p-titulo").value    = p.titulo    || "";
+    document.getElementById("p-tipo").value      = p.tipo      || "Apartamento";
+    document.getElementById("p-endereco").value  = p.endereco  || "";
+    document.getElementById("p-bairro").value    = p.bairro    || "";
+    document.getElementById("p-cidade").value    = p.cidade    || "";
+    document.getElementById("p-preco").value     = p.preco     || "";
+    document.getElementById("p-area").value      = p.area      || "";
+    document.getElementById("p-quartos").value   = p.quartos   || "";
+    document.getElementById("p-banheiros").value = p.banheiros || "";
+    document.getElementById("p-vagas").value     = p.vagas     || "";
+    document.getElementById("p-desc").value      = p.descricao || "";
+    // Carrega fotos existentes (suporta campo antigo `foto` e novo `fotos`)
+    if (Array.isArray(p.fotos) && p.fotos.length) {
+      fotosTemp = [...p.fotos];
+    } else if (p.foto) {
+      fotosTemp = [p.foto];
+    }
+    renderizarFotosForm();
+  }
+
+  document.getElementById("modalProp").style.display = "flex";
+}
+
+function fecharFormProp() {
+  document.getElementById("modalProp").style.display = "none";
+}
+
+function salvarProp(event) {
+  event.preventDefault();
+  const idx = parseInt(document.getElementById("prop-id").value);
+
+  const prop = {
+    titulo:    document.getElementById("p-titulo").value.trim(),
+    tipo:      document.getElementById("p-tipo").value,
+    endereco:  document.getElementById("p-endereco").value.trim(),
+    bairro:    document.getElementById("p-bairro").value.trim(),
+    cidade:    document.getElementById("p-cidade").value.trim(),
+    preco:     document.getElementById("p-preco").value.trim(),
+    area:      document.getElementById("p-area").value.trim(),
+    quartos:   document.getElementById("p-quartos").value,
+    banheiros: document.getElementById("p-banheiros").value,
+    vagas:     document.getElementById("p-vagas").value,
+    descricao: document.getElementById("p-desc").value.trim(),
+    fotos:     [...fotosTemp],   // array de base64
+  };
+
+  if (idx === -1) {
+    prop.id = Date.now();
+    propriedades.push(prop);
+  } else {
+    prop.id = propriedades[idx].id;
+    propriedades[idx] = prop;
+  }
+
+  salvarPropriedadesLS();
+  renderizarPropriedades();
+  fecharFormProp();
+  mostrarToast(idx === -1 ? "✅ Propriedade cadastrada!" : "✅ Propriedade atualizada!", "ok");
+}
+
+// ---- Gerenciamento de múltiplas fotos no formulário ----
+let fotosTemp = []; // base64[] das fotos do formulário aberto
+
+function handleFotos(event) {
+  const files = [...event.target.files];
+  const limite = 10;
+  const restam = limite - fotosTemp.length;
+  if (restam <= 0) { mostrarToast("⚠️ Limite de 10 fotos atingido.", "err"); return; }
+
+  const filesToProcess = files.slice(0, restam);
+  if (files.length > restam) mostrarToast(`⚠️ Apenas ${restam} foto(s) adicionada(s) (limite de ${limite}).`, "err");
+
+  let processed = 0;
+  filesToProcess.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      fotosTemp.push(e.target.result);
+      processed++;
+      if (processed === filesToProcess.length) renderizarFotosForm();
+    };
+    reader.readAsDataURL(file);
+  });
+  // Limpa o input para permitir re-selecionar os mesmos arquivos
+  event.target.value = "";
+}
+
+function renderizarFotosForm() {
+  const grid = document.getElementById("fotos-grid");
+  if (!grid) return;
+
+  const thumbs = fotosTemp.map((src, i) => `
+    <div class="foto-thumb">
+      <img src="${src}" alt="Foto ${i+1}" />
+      ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
+      <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
+    </div>`).join('');
+
+  const addBtn = fotosTemp.length < 10 ? `
+    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <span>Adicionar foto</span>
+    </div>` : '';
+
+  grid.innerHTML = thumbs + addBtn;
+}
+
+function removerFotoForm(idx) {
+  fotosTemp.splice(idx, 1);
+  renderizarFotosForm();
+}
+
+// ---- Carrossel do card ----
+const _carouselIdx = {}; // { propIdx: slideAtual }
+
+function carouselIr(propIdx, slide) {
+  const p = propriedades[propIdx];
+  const fotos = Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (p.foto ? [p.foto] : []);
+  const total  = fotos.length;
+  if (total <= 1) return;
+
+  slide = ((slide % total) + total) % total; // wrap
+  _carouselIdx[propIdx] = slide;
+
+  const track   = document.getElementById(`carousel-track-${propIdx}`);
+  const counter = document.querySelector(`#carousel-${propIdx} .prop-carousel-counter`);
+  const dots    = document.querySelectorAll(`#carousel-${propIdx} .prop-carousel-dot`);
+
+  if (track)   track.style.transform = `translateX(-${slide * 100}%)`;
+  if (counter) counter.textContent   = `${slide + 1} / ${total}`;
+  dots.forEach((d, di) => d.classList.toggle('active', di === slide));
+}
+
+function carouselNext(propIdx) {
+  carouselIr(propIdx, (_carouselIdx[propIdx] || 0) + 1);
+}
+function carouselPrev(propIdx) {
+  carouselIr(propIdx, (_carouselIdx[propIdx] || 0) - 1);
+}
+function carouselDot(btn, propIdx, slide) {
+  carouselIr(propIdx, slide);
+}
+
+// ---- Remover propriedade ----
+function confirmarRemoverProp(idx) {
+  propIndexRemover = idx;
+  const p = propriedades[idx];
+  const tituloEl = document.getElementById("confirm-titulo");
+  if (tituloEl) tituloEl.textContent = "Remover propriedade";
+  document.getElementById("confirmNome").textContent = p.titulo;
+  document.getElementById("btnConfirmRemover").onclick = () => {
+    propriedades.splice(propIndexRemover, 1);
+    salvarPropriedadesLS();
+    renderizarPropriedades();
+    fecharConfirm();
+    mostrarToast("🗑️ Propriedade removida.", "ok");
+  };
+  document.getElementById("modalConfirm").style.display = "flex";
+}
+
+// ---- Gerar mensagem da propriedade ----
+function gerarMensagemProp(prop) {
+  const linhas = [];
+  linhas.push(`🏠 *${prop.titulo}*`);
+  linhas.push('');
+
+  const info = [prop.tipo, prop.area].filter(Boolean).join(' · ');
+  if (info) linhas.push(`🏷️ ${info}`);
+
+  const end = [prop.endereco, prop.bairro, prop.cidade].filter(Boolean).join(', ');
+  if (end) linhas.push(`📍 ${end}`);
+
+  const det = [];
+  if (prop.quartos)   det.push(`🛏️ ${prop.quartos} quarto${prop.quartos > 1 ? 's' : ''}`);
+  if (prop.banheiros) det.push(`🚿 ${prop.banheiros} banheiro${prop.banheiros > 1 ? 's' : ''}`);
+  if (prop.vagas)     det.push(`🚗 ${prop.vagas} vaga${prop.vagas > 1 ? 's' : ''}`);
+  if (det.length) linhas.push(det.join('  '));
+
+  if (prop.descricao) { linhas.push(''); linhas.push(prop.descricao); }
+
+  linhas.push('');
+  if (prop.preco) linhas.push(`💰 *${prop.preco}*`);
+  linhas.push('');
+  linhas.push('📞 Entre em contato com *LF Imóveis* para mais informações!');
+
+  return linhas.join('\n');
+}
+
+// ---- Modal disparo ----
+function abrirModalDisparo(idx) {
+  propIndexDisparo = idx;
+  const prop = propriedades[idx];
+
+  document.getElementById("disparo-mensagem").value = gerarMensagemProp(prop);
+
+  const lista = document.getElementById("disparo-lista");
+  lista.innerHTML = todosOsDados.map((c, i) => `
+    <label class="disparo-item">
+      <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
+      <div class="disparo-item-info">
+        <div class="disparo-item-nome">${c.nome}</div>
+        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
+      </div>
+    </label>`).join('');
+
+  atualizarContadorDisparo();
+  document.getElementById("modalDisparo").style.display = "flex";
+}
+
+function fecharModalDisparo() {
+  document.getElementById("modalDisparo").style.display = "none";
+}
+
+function selecionarTodosClientes(sel) {
+  document.querySelectorAll(".disparo-check").forEach(cb => cb.checked = sel);
+  atualizarContadorDisparo();
+}
+
+function atualizarContadorDisparo() {
+  const total = document.querySelectorAll(".disparo-check:checked").length;
+  const el = document.getElementById("disparo-counter");
+  if (el) el.innerHTML = `<strong>${total}</strong> cliente${total !== 1 ? 's' : ''} selecionado${total !== 1 ? 's' : ''}`;
+}
+
+async function dispararPropriedade() {
+  if (propIndexDisparo < 0) return;
+
+  const selecionados = [...document.querySelectorAll(".disparo-check:checked")]
+    .map(cb => todosOsDados[parseInt(cb.value)])
+    .filter(Boolean);
+
+  if (selecionados.length === 0) {
+    mostrarToast("⚠️ Selecione pelo menos um cliente.", "err");
+    return;
+  }
+
+  const prop     = propriedades[propIndexDisparo];
+  const mensagem = document.getElementById("disparo-mensagem").value;
+
+  fecharModalDisparo();
+
+  if (waStatus === "pronto" && socket) {
+    const titulo = `📤 Disparo: ${prop.titulo}`;
+    // Envia todas as fotos: 1ª com caption, demais como galeria
+    const fotos = Array.isArray(prop.fotos) && prop.fotos.length ? prop.fotos
+                  : (prop.foto ? [prop.foto] : []);
+    await enviarViaBackend(titulo, selecionados, () => mensagem, fotos);
+  } else {
+    // Fallback: links WhatsApp Web
+    const links = selecionados.map(c => {
+      const tel = c.telefone.replace(/\D/g, "");
+      return {
+        label: `📲 ${c.nome} — Apto ${c.apartamento}`,
+        url:   `https://wa.me/55${tel}?text=${encodeURIComponent(mensagem)}`
+      };
+    });
+    abrirModal(
+      `📤 Disparar: ${prop.titulo}`,
+      `${selecionados.length} cliente(s) selecionado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
+      links
+    );
+  }
+}
