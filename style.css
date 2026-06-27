@@ -193,8 +193,6 @@ body {
 }
 .btn-outline-sm:hover { border-color: var(--primary); color: var(--primary); background: #f0f0ff; }
 
-.btn-whatsapp:hover { border-color: #22c55e; color: #16a34a; background: #f0fdf4; }
-
 /* =============================================
    KPI ROW
    ============================================= */
@@ -343,12 +341,6 @@ body {
 .chip-purple:hover       { border-color: #7c3aed; color: #7c3aed; }
 
 /* Report actions */
-.report-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
 /* =============================================
    TABLE
    ============================================= */
@@ -762,8 +754,6 @@ tbody tr.aniversariante td:first-child { color: #7c3aed; }
   .search-box { min-width: 0; max-width: 100%; flex: 1 1 auto; order: 1; }
   .search-box input { padding: 7px 30px 7px 32px; font-size: .8rem; }
   .search-icon { width: 14px; height: 14px; left: 10px; }
-  .report-actions { display: none; }
-
   .table-section { padding: 8px 12px 20px; }
   .table-header { padding: 10px 12px; }
   .table-title { font-size: .8rem; }

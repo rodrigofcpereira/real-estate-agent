@@ -298,33 +298,6 @@ async function atualizarDados() {
   mostrarToast("✅ Dados atualizados!");
 }
 
-// ---- Enviar relatório ----
-function enviarRelatorio(canal) {
-  const vencidos = todosOsDados.filter(isVencido);
-  if (vencidos.length === 0) {
-    mostrarToast("ℹ️ Nenhum contrato vencido encontrado.");
-    return;
-  }
-  const corpo = vencidos.map(r =>
-    `${r.nome} | Apto ${r.apartamento} | ${r.condominio} | Venceu: ${r.terminoContrato} | Tel: ${r.telefone}`
-  ).join("\n");
-
-  try {
-    if (canal === "email") {
-      const assunto   = encodeURIComponent("Relatório de Contratos Vencidos – LF Imóveis");
-      const textoEmail = encodeURIComponent(`Contratos vencidos (${vencidos.length}):\n\n${corpo}`);
-      const abriu = window.open(`mailto:?subject=${assunto}&body=${textoEmail}`, "_blank");
-      if (!abriu) mostrarToast("⚠️ Permita pop-ups no navegador para abrir o e-mail.", "err");
-    } else {
-      const msg   = encodeURIComponent(`*Relatório de Contratos Vencidos – LF Imóveis*\n\n${corpo}`);
-      const abriu = window.open(`https://wa.me/?text=${msg}`, "_blank");
-      if (!abriu) mostrarToast("⚠️ Permita pop-ups no navegador para abrir o WhatsApp.", "err");
-    }
-  } catch (err) {
-    mostrarToast(`❌ Erro ao abrir relatório: ${err.message}`, "err");
-  }
-}
-
 // ---- Modal mensagem ----
 function abrirModal(titulo, texto, links) {
   document.getElementById("modalTitulo").textContent = titulo;
@@ -344,6 +317,20 @@ function fecharModal() { document.getElementById("modalMsg").style.display = "no
 
 // ---- Modal escolha de mensagem ----
 function abrirModalMensagem() {
+  if (waStatus !== "pronto" || !socket) {
+    mostrarToast("❌ WhatsApp não conectado.", "err");
+    _waContinuar = () => {
+      _waContinuar = null;
+      abrirModalMensagemDirect();
+    };
+    abrirModalWA();
+    iniciarWA();
+    return;
+  }
+  abrirModalMensagemDirect();
+}
+
+function abrirModalMensagemDirect() {
   document.getElementById("disparo-titulo").textContent = "📤 Enviar mensagem";
   document.getElementById("disparo-suggestions").style.display = "flex";
 
@@ -698,6 +685,17 @@ function abrirModalWA() {
 }
 function fecharModalWA() {
   document.getElementById("modalWA").style.display = "none";
+}
+
+let _waContinuar = null;
+
+function continuarSemWA() {
+  fecharModalWA();
+  if (typeof _waContinuar === "function") {
+    const fn = _waContinuar;
+    _waContinuar = null;
+    fn();
+  }
 }
 
 // ---- Iniciar WA (emit) ----
@@ -1256,6 +1254,20 @@ function gerarMensagemProp(prop) {
 
 // ---- Modal disparo ----
 function abrirModalDisparo(idx) {
+  if (waStatus !== "pronto" || !socket) {
+    mostrarToast("❌ WhatsApp não conectado.", "err");
+    _waContinuar = () => {
+      _waContinuar = null;
+      abrirModalDisparoDirect(idx);
+    };
+    abrirModalWA();
+    iniciarWA();
+    return;
+  }
+  abrirModalDisparoDirect(idx);
+}
+
+function abrirModalDisparoDirect(idx) {
   propIndexDisparo = idx;
   mensagemTipoAtivo = null;
   const prop = propriedades[idx];
@@ -1300,15 +1312,8 @@ async function dispararPropriedade() {
   const selecionados = [...document.querySelectorAll(".disparo-check:checked")]
     .map(cb => todosOsDados[parseInt(cb.value)])
     .filter(Boolean);
-
-  if (selecionados.length === 0) {
-    mostrarToast("⚠️ Selecione pelo menos um cliente.", "err");
-    return;
-  }
-
   const mensagem = document.getElementById("disparo-mensagem").value;
 
-  // Salva estado antes de fechar (fecharModalDisparo reseta as flags)
   const propIdx = propIndexDisparo;
   const msgTipo = mensagemTipoAtivo;
   fecharModalDisparo();
@@ -1326,13 +1331,11 @@ async function dispararPropriedade() {
     titulo = "📤 Mensagem personalizada";
   }
 
-  // Substitui placeholders {campo} pelos dados reais do cliente
   const personalizar = (txt, c) => txt.replace(/{(\w+)}/g, (_, campo) => {
     if (campo === 'nome') return c.nome.split(" ")[0];
     return c[campo] !== undefined ? c[campo] : `{${campo}}`;
   });
 
-  // Usa msgFn personalizada se veio de sugestão, senão usa texto fixo do textarea
   const fnMensagem = (msgTipo && msgTipo.msgFn)
     ? (r) => personalizar(msgTipo.msgFn(r), r)
     : (r) => personalizar(mensagem, r);
