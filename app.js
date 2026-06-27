@@ -343,12 +343,36 @@ function abrirModal(titulo, texto, links) {
 function fecharModal() { document.getElementById("modalMsg").style.display = "none"; }
 
 // ---- Modal escolha de mensagem ----
-function abrirModalMensagem() { document.getElementById("modalEscolha").style.display = "flex"; }
-function fecharModalEscolha() { document.getElementById("modalEscolha").style.display = "none"; }
+function abrirModalMensagem() {
+  document.getElementById("disparo-titulo").textContent = "📤 Enviar mensagem";
+  document.getElementById("disparo-suggestions").style.display = "flex";
+
+  // Começa na opção "Livre": todos os clientes, mensagem vazia
+  document.querySelectorAll(".sug-btn").forEach(b => b.classList.remove("active"));
+  const livreBtn = document.getElementById("sug-livre");
+  if (livreBtn) livreBtn.classList.add("active");
+
+  document.getElementById("disparo-mensagem").value = "";
+  mensagemTipoAtivo = null;
+  propIndexDisparo = -1;
+
+  const lista = document.getElementById("disparo-lista");
+  lista.innerHTML = todosOsDados.map((c, i) => `
+    <label class="disparo-item">
+      <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
+      <div class="disparo-item-info">
+        <div class="disparo-item-nome">${c.nome}</div>
+        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
+      </div>
+    </label>`).join('');
+
+  atualizarContadorDisparo();
+  document.getElementById("modalDisparo").style.display = "flex";
+}
 
 // ---- Fechar modais clicando fora ----
 document.addEventListener("click", e => {
-  ["modalMsg", "modalEscolha", "modalCliente", "modalConfirm"].forEach(id => {
+  ["modalMsg", "modalCliente", "modalConfirm", "modalDisparo", "modalWA", "modalProp"].forEach(id => {
     const el = document.getElementById(id);
     if (e.target === el) el.style.display = "none";
   });
@@ -501,11 +525,41 @@ function fecharConfirm() {
 }
 
 // ==============================================
+//  SIDEBAR TOGGLE (mobile)
+// ==============================================
+function toggleSidebar() {
+  const sidebar = document.querySelector(".sidebar");
+  let overlay = document.getElementById("sidebar-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.className = "sidebar-overlay";
+    overlay.id = "sidebar-overlay";
+    overlay.onclick = toggleSidebar;
+    document.body.appendChild(overlay);
+  }
+  sidebar.classList.toggle("open");
+  overlay.classList.toggle("show", sidebar.classList.contains("open"));
+}
+
+// Fecha sidebar ao navegar no mobile
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".nav-item, .nav-item-wa").forEach(el => {
+    el.addEventListener("click", () => {
+      if (window.innerWidth <= 768) {
+        const sidebar = document.querySelector(".sidebar");
+        const overlay = document.getElementById("sidebar-overlay");
+        sidebar.classList.remove("open");
+        if (overlay) overlay.classList.remove("show");
+      }
+    });
+  });
+});
+
+// ==============================================
 //  WHATSAPP – Socket.io
 // ==============================================
 
 function iniciarSocket() {
-  // Só conecta ao socket se o servidor estiver disponível
   try {
     socket = io(API_BASE, { transports: ["websocket"], reconnectionAttempts: 3, timeout: 3000 });
 
@@ -514,12 +568,27 @@ function iniciarSocket() {
     });
 
     socket.on("connect_error", () => {
-      // Servidor não está rodando – modo offline (WhatsApp web.js indisponível)
       socket = null;
     });
 
     socket.on("wa:status", (data) => {
       atualizarStatusWA(data.status, data.message);
+
+      // Auto-conectar: tenta conectar automaticamente ao carregar
+      if (!window._waAutoConnectDone) {
+        window._waAutoConnectDone = true;
+        if (data.status !== "pronto") {
+          socket.emit("wa:iniciar");
+        }
+      }
+
+      // Abre o modal automaticamente se gerou QR ou deu erro
+      if (window._waAutoConnectDone && !window._waModalOpened) {
+        if (data.status === "qr" || data.status === "erro") {
+          window._waModalOpened = true;
+          document.getElementById("modalWA").style.display = "flex";
+        }
+      }
     });
 
     socket.on("wa:qr", (data) => {
@@ -542,25 +611,34 @@ function atualizarStatusWA(status, msg = "") {
   const timeoutEl = document.getElementById("wa-connecting-timeout");
   if (timeoutEl) timeoutEl.style.display = "none";
 
-  // Botão topbar
-  const label  = document.getElementById("btnWALabel");
-  const dot    = document.getElementById("waDot");
-  const dotSm  = document.getElementById("waStatusDot");
-  const txtSm  = document.getElementById("waStatusText");
+  // Sidebar WhatsApp item
+  const sidebarWa    = document.getElementById("sidebar-wa");
+  const sidebarDot   = document.getElementById("sidebar-wa-dot");
+  const sidebarText  = document.getElementById("sidebar-wa-text");
+  const sidebarBtn   = document.getElementById("sidebar-wa-btn");
+
+  const modalDot  = document.getElementById("waStatusDot");
+  const modalText = document.getElementById("waStatusText");
 
   const estados = {
-    desconectado: { label: "Conectar WhatsApp", dotClass: "offline", dotSmClass: "red",    txt: "Desconectado" },
-    qr:           { label: "Escaneie o QR",      dotClass: "offline", dotSmClass: "yellow", txt: "Aguardando QR" },
-    conectando:   { label: "Conectando...",       dotClass: "offline", dotSmClass: "yellow", txt: "Conectando..." },
-    autenticado:  { label: "Conectando...",       dotClass: "offline", dotSmClass: "yellow", txt: "Autenticando..." },
-    pronto:       { label: "WhatsApp ativo",      dotClass: "online",  dotSmClass: "green",  txt: "Conectado" },
-    erro:         { label: "Reconectar",          dotClass: "offline", dotSmClass: "red",    txt: "Erro de conexão" },
+    desconectado: { dot: "red",   txt: "Desconectado",   btn: "Conectar",   sidebarClass: "" },
+    qr:           { dot: "yellow",txt: "Aguardando QR",  btn: "QR Code",    sidebarClass: "" },
+    conectando:   { dot: "yellow",txt: "Conectando...",   btn: "Abrindo...", sidebarClass: "" },
+    autenticado:  { dot: "yellow",txt: "Autenticando...", btn: "Abrindo...", sidebarClass: "" },
+    pronto:       { dot: "green", txt: "Conectado",       btn: "Gerenciar", sidebarClass: "connected" },
+    erro:         { dot: "red",   txt: "Erro",            btn: "Reconectar", sidebarClass: "" },
   };
   const e = estados[status] || estados.desconectado;
-  if (label) label.textContent = e.label;
-  if (dot) { dot.className = "wa-dot " + e.dotClass; }
-  if (dotSm) dotSm.className = "wa-dot-sm " + e.dotSmClass;
-  if (txtSm) txtSm.textContent = e.txt + (msg ? " – " + msg : "");
+
+  // Sidebar
+  if (sidebarDot)  sidebarDot.className = "nav-item-wa-dot " + e.dot;
+  if (sidebarText) sidebarText.textContent = e.txt + (msg && status === "erro" ? " – " + msg : "");
+  if (sidebarBtn)  sidebarBtn.textContent = e.btn;
+  if (sidebarWa)   sidebarWa.className = "nav-item-wa" + (e.sidebarClass ? " " + e.sidebarClass : "");
+
+  // Modal status bar
+  if (modalDot)  modalDot.className = "wa-dot-sm " + e.dot;
+  if (modalText) modalText.textContent = e.txt + (msg ? " – " + msg : "");
 
   // Mostrar painel correto dentro do modal
   const paineis = ["desconectado","qr","conectando","pronto","erro"];
@@ -609,6 +687,13 @@ function abrirModalWA() {
     mostrarToast("⚠️ Servidor offline. Inicie com: npm start", "err");
     return;
   }
+  // Fecha sidebar no mobile ao abrir modal
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector(".sidebar");
+    const overlay = document.getElementById("sidebar-overlay");
+    sidebar.classList.remove("open");
+    if (overlay) overlay.classList.remove("show");
+  }
   document.getElementById("modalWA").style.display = "flex";
 }
 function fecharModalWA() {
@@ -655,44 +740,79 @@ async function limparSessaoWA() {
 //  ENVIO DE MENSAGENS – via backend ou WhatsApp Web
 // ==============================================
 
-// ---- Enviar mensagem ----
-async function enviarMensagem(tipo) {
+// ---- Aplicar sugestão de mensagem (menu horizontal) ----
+function aplicarSugestao(tipo) {
   const h = hoje();
-  let clientes = [], titulo = "", msgFn = () => "";
+  let clientes = [], msgFn = () => "";
+  const titulos = {
+    aniversario: "🎂 Mensagem de Aniversário",
+    contrato_vencido: "📋 Aviso de Contrato Vencido",
+    ano_novo: "🎆 Mensagem de Ano Novo"
+  };
 
-  if (tipo === "aniversario") {
-    titulo = "🎂 Mensagem de Aniversário";
-    clientes = todosOsDados.filter(isAniversariante);
-    msgFn = r => `Feliz aniversário, ${r.nome.split(" ")[0]}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
-  } else if (tipo === "contrato_vencido") {
-    titulo = "📋 Aviso de Contrato Vencido";
-    clientes = todosOsDados.filter(isVencido);
-    msgFn = r => `Olá, ${r.nome.split(" ")[0]}! Seu contrato do apartamento ${r.apartamento} venceu em ${r.terminoContrato}. Entre em contato para renovação.`;
-  } else if (tipo === "ano_novo") {
-    titulo = "🎆 Mensagem de Ano Novo";
-    clientes = todosOsDados;
-    msgFn = r => `Feliz Ano Novo, ${r.nome.split(" ")[0]}! 🎆 A LF Imóveis agradece sua confiança e deseja realizações incríveis!`;
-  }
+  if (tipo === "livre") {
+    document.querySelectorAll(".sug-btn").forEach(b => b.classList.remove("active"));
+    const btn = document.getElementById("sug-livre");
+    if (btn) btn.classList.add("active");
 
-  if (clientes.length === 0) {
-    abrirModal(titulo, "Nenhum cliente encontrado para este filtro.", []);
+    document.getElementById("disparo-mensagem").value = "";
+    mensagemTipoAtivo = null;
+
+    const lista = document.getElementById("disparo-lista");
+    lista.innerHTML = todosOsDados.map((c, i) => `
+      <label class="disparo-item">
+        <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
+        <div class="disparo-item-info">
+          <div class="disparo-item-nome">${c.nome}</div>
+          <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
+        </div>
+      </label>`).join('');
+    atualizarContadorDisparo();
     return;
   }
 
-  // Se WhatsApp conectado via servidor, enviar direto
-  if (waStatus === "pronto" && socket) {
-    await enviarViaBackend(titulo, clientes, msgFn);
-  } else {
-    // Fallback: links WhatsApp Web
-    const links = clientes.map(r => {
-      const tel = r.telefone.replace(/\D/g, "");
-      const msg = encodeURIComponent(msgFn(r));
-      return { label: `📲 ${r.nome} — Apto ${r.apartamento}`, url: `https://wa.me/55${tel}?text=${msg}` };
-    });
-    abrirModal(titulo,
-      `${clientes.length} cliente(s) encontrado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
-      links);
+  if (tipo === "aniversario") {
+    clientes = todosOsDados.filter(isAniversariante);
+    msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
+  } else if (tipo === "contrato_vencido") {
+    clientes = todosOsDados.filter(isVencido);
+    msgFn = r => `Olá, {nome}! Seu contrato do apartamento {apartamento} venceu em {terminoContrato}. Entre em contato para renovação.`;
+  } else if (tipo === "ano_novo") {
+    clientes = todosOsDados;
+    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 A LF Imóveis agradece sua confiança e deseja realizações incríveis!`;
   }
+
+  // Destaca o botão ativo
+  document.querySelectorAll(".sug-btn").forEach(b => b.classList.remove("active"));
+  const btn = document.getElementById("sug-" + tipo);
+  if (btn) btn.classList.add("active");
+
+  // Preenche a mensagem
+  const msgExemplo = clientes.length > 0 ? msgFn(clientes[0]) : "";
+  document.getElementById("disparo-mensagem").value = msgExemplo;
+
+  // Filtra a lista de clientes
+  const lista = document.getElementById("disparo-lista");
+  if (clientes.length === 0) {
+    lista.innerHTML = `<div class="sem-resultados" style="display:flex;padding:24px"><p>Nenhum cliente encontrado para esta sugestão.</p></div>`;
+    atualizarContadorDisparo();
+    return;
+  }
+
+  lista.innerHTML = clientes.map(c => {
+    const idx = todosOsDados.indexOf(c);
+    return `
+    <label class="disparo-item">
+      <input type="checkbox" class="disparo-check" value="${idx}" onchange="atualizarContadorDisparo()" checked />
+      <div class="disparo-item-info">
+        <div class="disparo-item-nome">${c.nome}</div>
+        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
+      </div>
+    </label>`;
+  }).join('');
+
+  mensagemTipoAtivo = { tipo, titulo: titulos[tipo], msgFn };
+  atualizarContadorDisparo();
 }
 
 async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
@@ -818,6 +938,7 @@ function irPara(pagina) {
 let propriedades       = [];
 let propIndexRemover   = -1;
 let propIndexDisparo   = -1;
+let mensagemTipoAtivo  = null;
 
 // ---- Persistência ----
 function carregarPropriedades() {
@@ -1136,9 +1257,13 @@ function gerarMensagemProp(prop) {
 // ---- Modal disparo ----
 function abrirModalDisparo(idx) {
   propIndexDisparo = idx;
+  mensagemTipoAtivo = null;
   const prop = propriedades[idx];
 
+  document.getElementById("disparo-titulo").textContent = `📤 Disparar: ${prop.titulo}`;
+  document.getElementById("disparo-suggestions").style.display = "none";
   document.getElementById("disparo-mensagem").value = gerarMensagemProp(prop);
+  document.querySelectorAll(".sug-btn").forEach(b => b.classList.remove("active"));
 
   const lista = document.getElementById("disparo-lista");
   lista.innerHTML = todosOsDados.map((c, i) => `
@@ -1156,6 +1281,8 @@ function abrirModalDisparo(idx) {
 
 function fecharModalDisparo() {
   document.getElementById("modalDisparo").style.display = "none";
+  propIndexDisparo = -1;
+  mensagemTipoAtivo = null;
 }
 
 function selecionarTodosClientes(sel) {
@@ -1170,8 +1297,6 @@ function atualizarContadorDisparo() {
 }
 
 async function dispararPropriedade() {
-  if (propIndexDisparo < 0) return;
-
   const selecionados = [...document.querySelectorAll(".disparo-check:checked")]
     .map(cb => todosOsDados[parseInt(cb.value)])
     .filter(Boolean);
@@ -1181,30 +1306,50 @@ async function dispararPropriedade() {
     return;
   }
 
-  const prop     = propriedades[propIndexDisparo];
   const mensagem = document.getElementById("disparo-mensagem").value;
 
+  // Salva estado antes de fechar (fecharModalDisparo reseta as flags)
+  const propIdx = propIndexDisparo;
+  const msgTipo = mensagemTipoAtivo;
   fecharModalDisparo();
 
-  if (waStatus === "pronto" && socket) {
-    const titulo = `📤 Disparo: ${prop.titulo}`;
-    // Envia todas as fotos: 1ª com caption, demais como galeria
-    const fotos = Array.isArray(prop.fotos) && prop.fotos.length ? prop.fotos
-                  : (prop.foto ? [prop.foto] : []);
-    await enviarViaBackend(titulo, selecionados, () => mensagem, fotos);
+  let titulo, fotos = [];
+
+  if (propIdx >= 0) {
+    const prop = propriedades[propIdx];
+    titulo = `📤 Disparo: ${prop.titulo}`;
+    fotos = Array.isArray(prop.fotos) && prop.fotos.length ? prop.fotos
+            : (prop.foto ? [prop.foto] : []);
+  } else if (msgTipo) {
+    titulo = msgTipo.titulo;
   } else {
-    // Fallback: links WhatsApp Web
+    titulo = "📤 Mensagem personalizada";
+  }
+
+  // Substitui placeholders {campo} pelos dados reais do cliente
+  const personalizar = (txt, c) => txt.replace(/{(\w+)}/g, (_, campo) => {
+    if (campo === 'nome') return c.nome.split(" ")[0];
+    return c[campo] !== undefined ? c[campo] : `{${campo}}`;
+  });
+
+  // Usa msgFn personalizada se veio de sugestão, senão usa texto fixo do textarea
+  const fnMensagem = (msgTipo && msgTipo.msgFn)
+    ? (r) => personalizar(msgTipo.msgFn(r), r)
+    : (r) => personalizar(mensagem, r);
+
+  if (waStatus === "pronto" && socket) {
+    await enviarViaBackend(titulo, selecionados, fnMensagem, fotos);
+  } else {
     const links = selecionados.map(c => {
       const tel = c.telefone.replace(/\D/g, "");
+      const msg = fnMensagem(c);
       return {
         label: `📲 ${c.nome} — Apto ${c.apartamento}`,
-        url:   `https://wa.me/55${tel}?text=${encodeURIComponent(mensagem)}`
+        url:   `https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`
       };
     });
-    abrirModal(
-      `📤 Disparar: ${prop.titulo}`,
+    abrirModal(titulo,
       `${selecionados.length} cliente(s) selecionado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
-      links
-    );
+      links);
   }
 }

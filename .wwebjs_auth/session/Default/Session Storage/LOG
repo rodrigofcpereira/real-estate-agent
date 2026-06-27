@@ -1,2 +1,3 @@
-2026/06/24-10:20:07.330 15eaa Creating DB /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Session Storage since it was missing.
-2026/06/24-10:20:07.333 15eaa Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Session Storage/MANIFEST-000001
+2026/06/27-14:02:08.904 221e2 Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Session Storage/MANIFEST-000001
+2026/06/27-14:02:08.905 221e2 Recovering log #3
+2026/06/27-14:02:08.905 221e2 Reusing old log /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Session Storage/000003.log 

@@ -1,2 +1,3 @@
-2026/06/24-10:20:09.074 15e9a Creating DB /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Service Worker/Database since it was missing.
-2026/06/24-10:20:09.077 15e9a Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Service Worker/Database/MANIFEST-000001
+2026/06/27-14:02:07.246 221e5 Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Service Worker/Database/MANIFEST-000001
+2026/06/27-14:02:07.246 221e5 Recovering log #3
+2026/06/27-14:02:07.246 221e5 Reusing old log /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Service Worker/Database/000003.log 

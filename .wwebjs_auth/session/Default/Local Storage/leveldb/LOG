@@ -1,2 +1,6 @@
-2026/06/24-10:20:07.285 15e9b Creating DB /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Local Storage/leveldb since it was missing.
-2026/06/24-10:20:07.299 15e9b Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/06/27-14:02:07.244 221e4 Reusing MANIFEST /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/06/27-14:02:07.245 221e4 Recovering log #3
+2026/06/27-14:02:07.245 221e4 Reusing old log /Users/user/Desktop/arquivos/corretor/.wwebjs_auth/session/Default/Local Storage/leveldb/000003.log 
+2026/06/27-14:03:07.249 221e2 Level-0 table #5: started
+2026/06/27-14:03:07.251 221e2 Level-0 table #5: 20190 bytes OK
+2026/06/27-14:03:07.253 221e2 Delete type=0 #3
