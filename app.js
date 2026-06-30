@@ -3,10 +3,6 @@
 //  Dados de exemplo + toda a lógica da interface
 // =============================================
 
-// ---- Configuração Google Sheets (opcional) ----
-const USE_SHEETS = false;
-const SHEETS_CSV_URL = "";
-
 // ---- Servidor backend ----
 const API_BASE = "http://localhost:3000";
 
@@ -14,21 +10,9 @@ const API_BASE = "http://localhost:3000";
 let waStatus = "desconectado";
 let socket = null;
 
-// ---- Dados de exemplo ----
-const dadosExemplo = [
-  { nome: "Catarina Cursino de Vasconcelos", telefone: "81-99748-4557", apartamento: "1406", nascimento: "01/12/1981", inicioContrato: "05/04/2025", terminoContrato: "05/04/2026", condominio: "Praça dos Jacarandas" },
-  { nome: "Katryane Holanda Marques",        telefone: "87-99147-7552", apartamento: "1405", nascimento: "22/05/1981", inicioContrato: "15/04/2025", terminoContrato: "15/04/2026", condominio: "Praça dos Jacarandas" },
-  { nome: "Katryane Holanda Marques",        telefone: "87-99147-7552", apartamento: "1505", nascimento: "22/05/1981", inicioContrato: "05/04/2025", terminoContrato: "05/04/2026", condominio: "Praça dos Jacarandas" },
-  { nome: "Roberto Alves da Silva",          telefone: "81-98765-4321", apartamento: "0902", nascimento: "15/03/1975", inicioContrato: "01/01/2025", terminoContrato: "01/01/2026", condominio: "Residencial Boa Vista" },
-  { nome: "Fernanda Lima Costa",             telefone: "81-91234-5678", apartamento: "0301", nascimento: "03/06/1990", inicioContrato: "10/02/2025", terminoContrato: "10/02/2026", condominio: "Residencial Boa Vista" },
-  { nome: "Carlos Eduardo Mendes",           telefone: "81-93456-7890", apartamento: "1201", nascimento: "20/08/1985", inicioContrato: "01/03/2024", terminoContrato: "01/03/2025", condominio: "Parque das Flores" },
-  { nome: "Ana Paula Ferreira",              telefone: "81-94567-8901", apartamento: "0504", nascimento: "12/06/1993", inicioContrato: "15/05/2024", terminoContrato: "15/05/2025", condominio: "Parque das Flores" },
-  { nome: "Marcos Vinícius Souza",           telefone: "81-95678-9012", apartamento: "0805", nascimento: "08/11/1980", inicioContrato: "20/06/2024", terminoContrato: "20/06/2025", condominio: "Edifício Central" },
-  { nome: "Juliana Rodrigues Pinto",         telefone: "81-96789-0123", apartamento: "0103", nascimento: "25/06/1988", inicioContrato: "01/07/2024", terminoContrato: "01/07/2025", condominio: "Edifício Central" },
-  { nome: "Paulo Henrique Nascimento",       telefone: "81-97890-1234", apartamento: "1102", nascimento: "17/09/1977", inicioContrato: "05/08/2024", terminoContrato: "05/08/2025", condominio: "Torres do Sol" },
-  { nome: "Luciana Barros Cavalcanti",       telefone: "81-98901-2345", apartamento: "0702", nascimento: "30/04/1983", inicioContrato: "10/09/2024", terminoContrato: "10/09/2025", condominio: "Torres do Sol" },
-  { nome: "Diego Farias Monteiro",           telefone: "81-99012-3456", apartamento: "0201", nascimento: "06/06/1991", inicioContrato: "15/10/2024", terminoContrato: "15/10/2025", condominio: "Praça dos Jacarandas" },
-];
+// ---- Firebase listeners ----
+let unsubscribeClientes = null;
+let unsubscribePropriedades = null;
 
 // ---- Estado global ----
 let todosOsDados = [];
@@ -37,8 +21,6 @@ let chipAtivo = 'todos';
 
 // ---- Inicialização ----
 document.addEventListener("DOMContentLoaded", () => {
-  carregarDados();
-  carregarPropriedades();
   iniciarSocket();
 
   // Máscara automática de data (DD/MM/AAAA)
@@ -87,43 +69,35 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// ---- Carregar dados ----
-async function carregarDados() {
-  // Prioridade: localStorage > Google Sheets > dados de exemplo
-  const salvo = localStorage.getItem("lf_clientes");
-  if (salvo) {
-    try { todosOsDados = JSON.parse(salvo); } catch(e) { todosOsDados = dadosExemplo; }
-  } else if (USE_SHEETS && SHEETS_CSV_URL) {
-    try {
-      const resp = await fetch(SHEETS_CSV_URL);
-      const texto = await resp.text();
-      todosOsDados = parsearCSV(texto);
-    } catch (e) {
-      todosOsDados = dadosExemplo;
-    }
-    salvarLocal();
-  } else {
-    todosOsDados = [...dadosExemplo];
-    salvarLocal();
+// ---- Iniciar carregamento (chamado pelo auth.js após login) ----
+function iniciarCarregamento() {
+  carregarDados();
+  carregarPropriedades();
+}
+
+// ---- Carregar dados do Firestore (tempo real) ----
+function carregarDados() {
+  if (unsubscribeClientes) {
+    unsubscribeClientes();
+    unsubscribeClientes = null;
   }
-  dadosFiltrados = [...todosOsDados];
-  atualizarKPIs();
-  renderizarTabela(dadosFiltrados);
-}
-
-// ---- Persistir no localStorage ----
-function salvarLocal() {
-  localStorage.setItem("lf_clientes", JSON.stringify(todosOsDados));
-}
-
-// ---- Parser CSV simples ----
-function parsearCSV(texto) {
-  const linhas = texto.trim().split("\n");
-  if (linhas.length < 2) return [];
-  return linhas.slice(1).map(l => {
-    const c = l.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
-    return { nome: c[0]||"", telefone: c[1]||"", apartamento: c[2]||"", nascimento: c[3]||"", inicioContrato: c[4]||"", terminoContrato: c[5]||"", condominio: c[6]||"" };
-  }).filter(r => r.nome);
+  unsubscribeClientes = db.collection("clientes")
+    .orderBy("createdAt", "asc")
+    .onSnapshot(snapshot => {
+      todosOsDados = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        data.id = doc.id;
+        data._firestoreId = doc.id;
+        todosOsDados.push(data);
+      });
+      dadosFiltrados = [...todosOsDados];
+      atualizarKPIs();
+      renderizarTabela(dadosFiltrados);
+    }, error => {
+      console.error("Erro ao carregar clientes:", error);
+      mostrarToast("❌ Erro ao carregar dados do servidor.", "err");
+    });
 }
 
 // ---- Utilitário: parsear data dd/mm/yyyy ----
@@ -188,6 +162,15 @@ function renderizarTabela(dados) {
 
   if (dados.length === 0) { aviso.style.display = "flex"; return; }
   aviso.style.display = "none";
+
+  // Detecta se tabela tem scroll horizontal
+  requestAnimationFrame(() => {
+    const wrapper = document.querySelector(".table-wrapper");
+    const card = document.querySelector(".table-card");
+    if (wrapper && card) {
+      card.classList.toggle("is-scrollable", wrapper.scrollWidth > wrapper.clientWidth);
+    }
+  });
 
   dados.forEach(r => {
     const tr = document.createElement("tr");
@@ -292,10 +275,7 @@ function limparFiltros() { setChip('todos'); limparPesquisa(); }
 
 // ---- Atualizar dados ----
 async function atualizarDados() {
-  mostrarToast("🔄 Atualizando dados...");
-  await carregarDados();
-  aplicarFiltros();
-  mostrarToast("✅ Dados atualizados!");
+  mostrarToast("✅ Dados atualizados em tempo real!");
 }
 
 // ---- Modal mensagem ----
@@ -415,7 +395,7 @@ function editarCliente(idx) {
 }
 
 // ---- Salvar (criar ou atualizar) ----
-function salvarCliente(e) {
+async function salvarCliente(e) {
   e.preventDefault();
   if (!validarForm()) return;
 
@@ -430,17 +410,22 @@ function salvarCliente(e) {
     terminoContrato:document.getElementById("f-termino").value.trim(),
   };
 
-  if (idx === -1) {
-    todosOsDados.push(cliente);
-    mostrarToast("✅ Cliente adicionado!", "ok");
-  } else {
-    todosOsDados[idx] = cliente;
-    mostrarToast("✅ Cliente atualizado!", "ok");
+  try {
+    if (idx === -1) {
+      cliente.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection("clientes").add(cliente);
+      mostrarToast("✅ Cliente adicionado!", "ok");
+    } else {
+      const docId = todosOsDados[idx]._firestoreId || todosOsDados[idx].id;
+      cliente.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection("clientes").doc(docId).update(cliente);
+      mostrarToast("✅ Cliente atualizado!", "ok");
+    }
+  } catch (err) {
+    console.error("Erro ao salvar cliente:", err);
+    mostrarToast("❌ Erro ao salvar no servidor.", "err");
   }
 
-  salvarLocal();
-  atualizarKPIs();
-  aplicarFiltros();
   fecharFormCliente();
 }
 
@@ -494,16 +479,20 @@ function pedirRemocao(idx) {
 }
 
 // ---- Confirmar remoção ----
-function confirmarRemocao() {
+async function confirmarRemocao() {
   if (clienteParaRemover < 0) return;
-  const nome = todosOsDados[clienteParaRemover].nome;
-  todosOsDados.splice(clienteParaRemover, 1);
+  const r = todosOsDados[clienteParaRemover];
+  const nome = r.nome;
+  const docId = r._firestoreId || r.id;
   clienteParaRemover = -1;
-  salvarLocal();
-  atualizarKPIs();
-  aplicarFiltros();
+  try {
+    await db.collection("clientes").doc(docId).delete();
+    mostrarToast(`🗑️ ${nome} removido.`);
+  } catch (err) {
+    console.error("Erro ao remover cliente:", err);
+    mostrarToast("❌ Erro ao remover do servidor.", "err");
+  }
   fecharConfirm();
-  mostrarToast(`🗑️ ${nome} removido.`);
 }
 
 function fecharConfirm() {
@@ -938,16 +927,26 @@ let propIndexRemover   = -1;
 let propIndexDisparo   = -1;
 let mensagemTipoAtivo  = null;
 
-// ---- Persistência ----
+// ---- Carregar propriedades do Firestore (tempo real) ----
 function carregarPropriedades() {
-  const salvo = localStorage.getItem("lf_propriedades");
-  if (salvo) {
-    try { propriedades = JSON.parse(salvo); } catch(e) { propriedades = []; }
+  if (unsubscribePropriedades) {
+    unsubscribePropriedades();
+    unsubscribePropriedades = null;
   }
-}
-
-function salvarPropriedadesLS() {
-  localStorage.setItem("lf_propriedades", JSON.stringify(propriedades));
+  unsubscribePropriedades = db.collection("propriedades")
+    .orderBy("createdAt", "desc")
+    .onSnapshot(snapshot => {
+      propriedades = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        data.id = doc.id;
+        data._firestoreId = doc.id;
+        propriedades.push(data);
+      });
+      renderizarPropriedades();
+    }, error => {
+      console.error("Erro ao carregar propriedades:", error);
+    });
 }
 
 // ---- Renderizar grid ----
@@ -1092,7 +1091,7 @@ function fecharFormProp() {
   document.getElementById("modalProp").style.display = "none";
 }
 
-function salvarProp(event) {
+async function salvarProp(event) {
   event.preventDefault();
   const idx = parseInt(document.getElementById("prop-id").value);
 
@@ -1108,21 +1107,54 @@ function salvarProp(event) {
     banheiros: document.getElementById("p-banheiros").value,
     vagas:     document.getElementById("p-vagas").value,
     descricao: document.getElementById("p-desc").value.trim(),
-    fotos:     [...fotosTemp],   // array de base64
   };
 
-  if (idx === -1) {
-    prop.id = Date.now();
-    propriedades.push(prop);
-  } else {
-    prop.id = propriedades[idx].id;
-    propriedades[idx] = prop;
+  const btn = event.target.querySelector("button[type=submit]");
+  if (btn) { btn.disabled = true; btn.textContent = "Salvando..."; }
+
+  try {
+    // Upload das fotos (base64 → Storage)
+    const fotosUrls = await uploadFotos(fotosTemp);
+    prop.fotos = fotosUrls;
+
+    if (idx === -1) {
+      prop.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection("propriedades").add(prop);
+      mostrarToast("✅ Propriedade cadastrada!", "ok");
+    } else {
+      const docId = propriedades[idx]._firestoreId || propriedades[idx].id;
+      await db.collection("propriedades").doc(docId).update(prop);
+      mostrarToast("✅ Propriedade atualizada!", "ok");
+    }
+  } catch (err) {
+    console.error("Erro ao salvar propriedade:", err);
+    mostrarToast("❌ Erro ao salvar no servidor.", "err");
   }
 
-  salvarPropriedadesLS();
-  renderizarPropriedades();
+  fotosTemp = [];
+  if (btn) { btn.disabled = false; btn.textContent = "Salvar propriedade"; }
   fecharFormProp();
-  mostrarToast(idx === -1 ? "✅ Propriedade cadastrada!" : "✅ Propriedade atualizada!", "ok");
+}
+
+// ---- Upload de fotos para Firebase Storage ----
+async function uploadFotos(fotosArray) {
+  const urls = [];
+  for (const foto of fotosArray) {
+    if (foto.startsWith("https://")) {
+      urls.push(foto);
+      continue;
+    }
+    try {
+      const fileName = `foto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const ref = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
+      const snapshot = await ref.putString(foto, "data_url");
+      const url = await snapshot.ref.getDownloadURL();
+      urls.push(url);
+    } catch (err) {
+      console.error("Erro ao fazer upload de foto:", err);
+    }
+  }
+  return urls;
 }
 
 // ---- Gerenciamento de múltiplas fotos no formulário ----
@@ -1214,12 +1246,17 @@ function confirmarRemoverProp(idx) {
   const tituloEl = document.getElementById("confirm-titulo");
   if (tituloEl) tituloEl.textContent = "Remover propriedade";
   document.getElementById("confirmNome").textContent = p.titulo;
-  document.getElementById("btnConfirmRemover").onclick = () => {
-    propriedades.splice(propIndexRemover, 1);
-    salvarPropriedadesLS();
-    renderizarPropriedades();
+  document.getElementById("btnConfirmRemover").onclick = async () => {
+    const docId = propriedades[propIndexRemover]._firestoreId || propriedades[propIndexRemover].id;
+    try {
+      await db.collection("propriedades").doc(docId).delete();
+      mostrarToast("🗑️ Propriedade removida.", "ok");
+    } catch (err) {
+      console.error("Erro ao remover propriedade:", err);
+      mostrarToast("❌ Erro ao remover do servidor.", "err");
+    }
+    propIndexRemover = -1;
     fecharConfirm();
-    mostrarToast("🗑️ Propriedade removida.", "ok");
   };
   document.getElementById("modalConfirm").style.display = "flex";
 }

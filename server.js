@@ -18,6 +18,11 @@ const io     = new Server(server, { cors: { origin: "*" } });
 app.use(cors());
 app.use(express.json({ limit: "20mb" })); // suporta imagens em base64
 
+// Servir o app local (app.html como raiz)
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "app.html"));
+});
+
 // Servir os arquivos estáticos do frontend
 app.use(express.static(path.join(__dirname)));
 
@@ -51,21 +56,27 @@ async function iniciarWhatsApp() {
     whatsappStatus = "conectando";
     io.emit("wa:status", { status: "conectando" });
 
+    const puppeteerOpts = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-accelerated-2d-canvas",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process",
+        "--disable-gpu"
+      ]
+    };
+
+    if (process.env.CHROMIUM_PATH) {
+      puppeteerOpts.executablePath = process.env.CHROMIUM_PATH;
+    }
+
     clienteWA = new Client({
-      authStrategy: new LocalAuth({ dataPath: "./.wwebjs_auth" }),
-      puppeteer: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-gpu"
-        ]
-      }
+      authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || "./.wwebjs_auth" }),
+      puppeteer: puppeteerOpts
     });
 
     clienteWA.on("qr", async (qr) => {
@@ -300,7 +311,7 @@ app.post("/api/limpar-sessao", async (req, res) => {
   // Apaga os dados de sessão do LocalAuth
   const fs    = require("fs");
   const path2 = require("path");
-  const sessionPath = path2.join(__dirname, ".wwebjs_auth");
+  const sessionPath = process.env.WA_SESSION_PATH || path2.join(__dirname, ".wwebjs_auth");
   if (fs.existsSync(sessionPath)) {
     fs.rmSync(sessionPath, { recursive: true, force: true });
     console.log("🗑️  Sessão apagada com sucesso.");

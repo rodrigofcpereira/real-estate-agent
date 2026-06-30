@@ -1,0 +1,25 @@
+app = "lf-imoveis-backend"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PUPPETEER_CHROMIUM_REVISION = "skip"
+  PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[mounts]]
+  source = "wa_session"
+  destination = "/app/.wwebjs_auth"
+
+[[vm]]
+  memory = "2gb"
+  cpus = 2
+  gpu = null
