@@ -4,20 +4,20 @@
 #  Uso: ./update-vps.sh
 # ============================================================
 
+INSTANCE="instance-20260701-143850"
+ZONE="us-central1-b"
 VPS_IP="34.121.96.26"
-VPS_USER="hybriduzapp"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'; BOLD='\033[1m'
 
 echo -e "${BOLD}${CYAN}🚀 Atualizando Tech Corretor na VPS...${NC}"
-echo -e "${CYAN}   Servidor: ${VPS_USER}@${VPS_IP}${NC}\n"
+echo -e "${CYAN}   Instância: ${INSTANCE} (${ZONE})${NC}\n"
 
-ssh -o ConnectTimeout=10 "${VPS_USER}@${VPS_IP}" bash << 'REMOTE'
+gcloud compute ssh "${INSTANCE}" --zone="${ZONE}" --command='
   set -e
-  cd ~/tech-corretor
 
   echo "📥 Puxando código novo do GitHub..."
-  git pull origin main
+  sudo -u hybriduzapp git -C /home/hybriduzapp/tech-corretor pull origin main
 
   echo "🔄 Reiniciando serviço..."
   sudo systemctl restart tech-corretor
@@ -37,7 +37,7 @@ ssh -o ConnectTimeout=10 "${VPS_USER}@${VPS_IP}" bash << 'REMOTE'
   echo ""
   echo "📋 Últimas linhas do log:"
   sudo journalctl -u tech-corretor -n 10 --no-pager
-REMOTE
+'
 
 if [ $? -eq 0 ]; then
   echo -e "\n${GREEN}${BOLD}✅ VPS atualizada com sucesso!${NC}"
