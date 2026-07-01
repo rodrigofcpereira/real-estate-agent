@@ -658,17 +658,36 @@
       </div>
 
       <div class="cfg-card" style="margin-top:20px;">
-        <h3 class="cfg-card-title">📋 Como configurar a Oracle Cloud</h3>
+        <h3 class="cfg-card-title">📋 Como configurar o Servidor (Google Cloud)</h3>
+
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:#166534;">
+          ⭐ <strong>Recomendado:</strong> Google Cloud dá <strong>$300 grátis</strong> por 90 dias + VM <strong>e2-micro grátis para sempre</strong> depois.
+        </div>
+
         <ol class="cfg-steps">
-          <li>Acesse <strong>cloud.oracle.com</strong> e crie uma conta gratuita</li>
-          <li>Crie uma VM: <em>Compute → Instances → Create</em> (shape <strong>VM.Standard.A1.Flex</strong>, 4 CPU, 24GB RAM — gratuito)</li>
-          <li>No terminal do servidor, rode o script de instalação:</li>
+          <li>Acesse <strong>cloud.google.com</strong> → clique em <em>"Comece gratuitamente"</em></li>
+          <li>Faça login com sua <strong>conta Google</strong> (Gmail já serve)</li>
+          <li>Vá em <em>Compute Engine → VM Instances → Create Instance</em></li>
+          <li>Configure a VM:
+            <ul style="margin-top:6px;padding-left:16px;line-height:2;">
+              <li><strong>Machine type:</strong> <code>e2-standard-2</code> (2 CPU, 8GB RAM)</li>
+              <li><strong>Boot disk:</strong> Debian 12 ou Ubuntu 22.04</li>
+              <li><strong>Firewall:</strong> marque ✅ "Allow HTTP traffic"</li>
+            </ul>
+          </li>
+          <li>Clique em <em>"SSH"</em> para abrir o terminal do servidor</li>
+          <li>Cole e rode o script de instalação:</li>
         </ol>
-        <pre class="cfg-code">curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/main/setup-oracle.sh | bash</pre>
-        <ol class="cfg-steps" start="4">
-          <li>Anote o IP público do servidor (ex: <code>129.80.10.5</code>)</li>
-          <li>Volte aqui, selecione <strong>Oracle Cloud</strong> e cole a URL: <code>https://129.80.10.5:3000</code></li>
+        <pre class="cfg-code">curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/main/setup-gcloud.sh | bash</pre>
+        <ol class="cfg-steps" start="7">
+          <li>Anote o <strong>External IP</strong> da VM (ex: <code>34.95.100.50</code>)</li>
+          <li>Abra a porta 3000: <em>VPC Network → Firewall → Create Rule → TCP 3000</em></li>
+          <li>Volte aqui, selecione <strong>Oracle Cloud</strong> e cole: <code>http://34.95.100.50:3000</code></li>
         </ol>
+
+        <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:.82rem;color:#854d0e;">
+          💡 <strong>Dica:</strong> Após escanear o QR Code no servidor, o WhatsApp fica conectado 24/7 — mesmo com o computador desligado.
+        </div>
       </div>
 
     </div>
