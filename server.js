@@ -144,19 +144,20 @@ async function iniciarWhatsApp() {
         "--no-zygote",
         "--disable-extensions",
         "--disable-background-networking",
-        // Flags para economizar memória (essencial em servidores com pouca RAM)
         "--disable-gpu",
         "--disable-software-rasterizer",
         "--disable-default-apps",
         "--disable-sync",
         "--disable-translate",
-        "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+        "--disable-features=TranslateUI",
         "--disable-ipc-flooding-protection",
         "--memory-pressure-off",
-        "--single-process",            // reduz uso de RAM significativamente
         "--renderer-process-limit=1",
-        "--max_old_space_size=256"
-      ]
+        "--js-flags=--max-old-space-size=256",
+        "--shm-size=256mb"
+        // REMOVIDO: --single-process → causa crash no Linux
+      ],
+      timeout: 120000   // 2 minutos para carregar (VPS lento)
     };
 
     if (process.env.CHROMIUM_PATH) {
