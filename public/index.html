@@ -7,6 +7,197 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+      padding: 24px;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 24px;
+      padding: 48px 40px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      border: 1px solid #334155;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,.5);
+    }
+    .logo { font-size: 52px; margin-bottom: 12px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+    h1 span { color: #3b82f6; }
+    .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 36px; line-height: 1.6; }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 15px 28px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      background: #3b82f6;
+      color: #fff;
+      width: 100%;
+      transition: all .2s;
+    }
+    .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+    .footer {
+      margin-top: 28px;
+      color: #475569;
+      font-size: 12px;
+    }
+    .footer a { color: #3b82f6; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🏢</div>
+    <h1>Tech <span>Corretor</span></h1>
+    <p class="subtitle">Gestão de clientes, propriedades e<br>disparo de mensagens via WhatsApp</p>
+
+    <a href="http://34.121.96.26:3000" class="btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+        <polyline points="10 17 15 12 10 7"/>
+        <line x1="15" y1="12" x2="3" y2="12"/>
+      </svg>
+      Acessar o painel
+    </a>
+
+    <div class="footer">
+      Tech Corretor © 2026 &nbsp;·&nbsp;
+      <a href="/download">Baixar o app</a>
+    </div>
+  </div>
+</body>
+</html>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+      padding: 24px;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 24px;
+      padding: 48px 40px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      border: 1px solid #334155;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,.5);
+    }
+    .logo { font-size: 52px; margin-bottom: 12px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+    h1 span { color: #3b82f6; }
+    .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 36px; line-height: 1.6; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 15px 28px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all .2s;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      width: 100%;
+    }
+    .btn-primary { background: #3b82f6; color: #fff; margin-bottom: 12px; }
+    .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+    .btn-outline { background: transparent; color: #94a3b8; border: 1px solid #334155; font-size: 14px; }
+    .btn-outline:hover { background: #334155; color: #e2e8f0; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #334155;
+      margin: 28px 0;
+    }
+    .download-row {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-dl {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all .2s;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      background: transparent;
+    }
+    .btn-dl:hover { background: #334155; color: #e2e8f0; }
+    .footer { margin-top: 28px; color: #475569; font-size: 12px; }
+
+    @media (max-width: 480px) {
+      .card { padding: 32px 20px; }
+      .download-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🏢</div>
+    <h1>Tech <span>Corretor</span></h1>
+    <p class="subtitle">Gestão de clientes, propriedades e<br>disparo de mensagens via WhatsApp</p>
+
+    <!-- Botão principal: abre o app no servidor cloud -->
+    <a href="http://34.121.96.26:3000" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Acessar o painel
+    </a>
+
+    <hr class="divider" />
+
+    <p style="font-size:13px; color:#64748b; margin-bottom:14px;">Prefere instalar no computador?</p>
+    <div class="download-row">
+      <a href="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.dmg?alt=media"
+         class="btn-dl" download>
+        🍎 macOS
+      </a>
+      <a href="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.exe?alt=media"
+         class="btn-dl" download>
+        🪟 Windows
+      </a>
+    </div>
+
+    <div class="footer">Tech Corretor © 2026</div>
+  </div>
+</body>
+</html>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
