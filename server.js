@@ -279,6 +279,7 @@ async function iniciarWhatsApp() {
     clienteWA.on("disconnected", async (reason) => {
       console.warn("⚠️ WhatsApp desconectado:", reason);
       whatsappStatus = "desconectado";
+      _cacheNumeros.clear(); // limpa cache ao desconectar para evitar dados velhos
       io.emit("wa:status", { status: "desconectado", message: reason });
       await destruirCliente();
     });
@@ -326,7 +327,10 @@ io.on("connection", (socket) => {
 
 // ---- Utilitário: formatar e validar número ----
 // Cache de números já verificados para não consultar o WhatsApp toda vez
-const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } ou null
+const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } — só guarda sucessos
+
+// Timeout para getNumberId: VPS lenta precisa de mais tempo
+const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 25000 : 8000;
 
 async function resolverNumero(telefone) {
   // Remove tudo que não é dígito
@@ -335,10 +339,10 @@ async function resolverNumero(telefone) {
   // Garante DDI 55 (Brasil)
   if (!numero.startsWith("55")) numero = "55" + numero;
 
-  // Verifica cache primeiro
+  // Verifica cache primeiro (só tem entradas bem-sucedidas)
   if (_cacheNumeros.has(numero)) {
     const cached = _cacheNumeros.get(numero);
-    logFile(`📋 Cache: ${numero} → ${cached ? "encontrado" : "não registrado"}`);
+    logFile(`📋 Cache: ${numero} → encontrado (${cached.chatId})`);
     return cached;
   }
 
@@ -350,28 +354,31 @@ async function resolverNumero(telefone) {
 
   for (const candidato of candidatos) {
     try {
-      // Timeout de 8s por número para não travar o lote inteiro
       const numberId = await Promise.race([
         clienteWA.getNumberId(candidato),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), NUMERO_TIMEOUT_MS))
       ]);
       if (numberId) {
         const resultado = { chatId: numberId._serialized, numero: candidato };
-        _cacheNumeros.set(numero, resultado); // salva no cache
+        _cacheNumeros.set(numero, resultado); // salva no cache só se encontrou
         return resultado;
       }
+      // getNumberId retornou null — número não encontrado no WhatsApp
+      // NÃO salva null no cache: pode ser falso negativo em cold start
+      logFile(`⚠️  getNumberId retornou null para ${candidato} (sem cache)`);
     } catch (err) {
       if (err.message === "timeout") {
-        // Timeout na verificação — monta chatId direto sem validar
-        logFile(`⚠️  Timeout ao verificar ${candidato} — enviando sem validar`);
+        // Timeout — envia direto pelo chatId sem validar (mais rápido que esperar)
+        logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — enviando sem validar`);
         const resultado = { chatId: `${candidato}@c.us`, numero: candidato };
-        _cacheNumeros.set(numero, resultado);
+        _cacheNumeros.set(numero, resultado); // salva: timeout = assume válido
         return resultado;
       }
     }
   }
 
-  _cacheNumeros.set(numero, null); // salva null para não tentar de novo
+  // Não encontrado em nenhum candidato — NÃO salva null (tenta de novo na próxima vez)
+  logFile(`❌ Número ${numero} não encontrado no WhatsApp`);
   return null;
 }
 
