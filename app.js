@@ -634,6 +634,10 @@ function atualizarStatusWA(status, msg = "") {
   if (sidebarBtn)  sidebarBtn.textContent = e.btn;
   if (sidebarWa)   sidebarWa.className = "nav-item-wa" + (e.sidebarClass ? " " + e.sidebarClass : "");
 
+  // Bottom nav WA dot
+  const bnavDot = document.getElementById("bnav-wa-dot");
+  if (bnavDot) bnavDot.className = "bnav-wa-dot " + e.dot;
+
   // Modal status bar
   if (modalDot)  modalDot.className = "wa-dot-sm " + e.dot;
   if (modalText) modalText.textContent = e.txt + (msg ? " – " + msg : "");
@@ -932,10 +936,12 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
 // ==============================================
 function irPara(pagina) {
   ['dashboard', 'propriedades', 'configuracoes'].forEach(p => {
-    const el  = document.getElementById('page-' + p);
-    const nav = document.getElementById('nav-' + p);
-    if (el)  el.style.display = (p === pagina) ? 'flex' : 'none';
-    if (nav) nav.classList.toggle('active', p === pagina);
+    const el   = document.getElementById('page-' + p);
+    const nav  = document.getElementById('nav-' + p);
+    const bnav = document.getElementById('bnav-' + p);
+    if (el)   el.style.display = (p === pagina) ? 'flex' : 'none';
+    if (nav)  nav.classList.toggle('active', p === pagina);
+    if (bnav) bnav.classList.toggle('bnav-active', p === pagina);
   });
   if (pagina === 'propriedades') renderizarPropriedades();
   if (pagina === 'configuracoes') carregarTelaConfiguracoes();
