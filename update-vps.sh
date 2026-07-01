@@ -19,6 +19,12 @@ gcloud compute ssh "${INSTANCE}" --zone="${ZONE}" --command='
   echo "📥 Puxando código novo do GitHub..."
   sudo -u hybriduzapp git -C /home/hybriduzapp/tech-corretor pull origin main
 
+  # Patch: aumenta timeout hardcoded do whatsapp-web.js de 30s para 120s
+  # (necessário no e2-micro que é lento para carregar o WhatsApp Web)
+  sudo sed -i 's/{ timeout: 30000 },/{ timeout: 120000 },/g' \
+    /home/hybriduzapp/tech-corretor/node_modules/whatsapp-web.js/src/Client.js
+  echo "🔧 Patch whatsapp-web.js timeout aplicado"
+
   echo "🔄 Reiniciando serviço..."
   sudo systemctl restart tech-corretor
 
