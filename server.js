@@ -171,7 +171,10 @@ async function iniciarWhatsApp() {
         "--js-flags=--max-old-space-size=256",
         "--shm-size=256mb"
       ],
-      timeout: 120000
+      timeout: 120000,
+      // protocolTimeout: tempo máximo para cada chamada CDP (sendMessage, evaluate, etc.)
+      // Default é 30s — e2-micro é lento demais para isso
+      protocolTimeout: 120000
     };
 
     if (process.env.CHROMIUM_PATH) {
@@ -360,24 +363,19 @@ async function resolverNumero(telefone) {
       ]);
       if (numberId) {
         const resultado = { chatId: numberId._serialized, numero: candidato };
-        _cacheNumeros.set(numero, resultado); // salva no cache só se encontrou
+        _cacheNumeros.set(numero, resultado);
         return resultado;
       }
-      // getNumberId retornou null — número não encontrado no WhatsApp
-      // NÃO salva null no cache: pode ser falso negativo em cold start
-      logFile(`⚠️  getNumberId retornou null para ${candidato} (sem cache)`);
+      logFile(`⚠️  getNumberId retornou null para ${candidato}`);
     } catch (err) {
       if (err.message === "timeout") {
-        // Timeout — envia direto pelo chatId sem validar (mais rápido que esperar)
-        logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — enviando sem validar`);
-        const resultado = { chatId: `${candidato}@c.us`, numero: candidato };
-        _cacheNumeros.set(numero, resultado); // salva: timeout = assume válido
-        return resultado;
+        // Timeout na VPS lenta — NÃO usar @c.us (quebra com LID em contas novas)
+        // Retorna null: o frontend vai mostrar erro claro ao usuário
+        logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — WhatsApp ainda carregando?`);
       }
     }
   }
 
-  // Não encontrado em nenhum candidato — NÃO salva null (tenta de novo na próxima vez)
   logFile(`❌ Número ${numero} não encontrado no WhatsApp`);
   return null;
 }
@@ -471,8 +469,11 @@ app.post("/api/send-batch", async (req, res) => {
       resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
     }
 
-    // Pequena pausa entre mensagens para não sobrecarregar o WhatsApp
-    if (mensagens.length > 1) await new Promise(r => setTimeout(r, 1000));
+    // Pausa entre mensagens: mais tempo na VPS lenta para não sobrecarregar o Chrome
+    if (mensagens.length > 1) {
+      const pausaMs = process.platform === "linux" ? 3000 : 1000;
+      await new Promise(r => setTimeout(r, pausaMs));
+    }
   }
 
   const qtdOk  = resultados.filter(r => r.ok).length;
