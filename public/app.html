@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tech Corretor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+
+</head>
+<body>
+
+  <!-- ===== LOGIN PAGE ===== -->
+  <div id="login-page" class="login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="login-logo">🏢</span>
+        <span class="login-brand-text">Tech <strong>Corretor</strong></span>
+      </div>
+      <h2 id="login-title" class="login-title">Entrar</h2>
+      <p class="login-subtitle">Acesse o painel de gerenciamento</p>
+
+      <form onsubmit="handleLogin(event)" class="login-form">
+        <div class="login-field">
+          <label for="login-email">E-mail</label>
+          <input type="email" id="login-email" placeholder="seu@email.com" required autocomplete="email" />
+        </div>
+        <div class="login-field">
+          <label for="login-password">Senha</label>
+          <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+
+        <div id="login-error" class="login-error" style="display:none;"></div>
+
+        <button type="submit" class="btn btn-primary login-btn" id="login-btn">Entrar</button>
+      </form>
+
+      <p class="login-toggle" id="login-toggle">
+        Não tem conta? <a href="#" onclick="toggleAuthMode();return false">Criar conta</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== APP CONTAINER (protegido por auth) ===== -->
+  <div id="app-container" style="display:none;">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">🏢</span>
+      <span class="logo-text">Tech <strong>Corretor</strong></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" id="nav-dashboard" onclick="irPara('dashboard'); return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item" id="nav-propriedades" onclick="irPara('propriedades'); return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Propriedades
+      </a>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="nav-item-wa" id="sidebar-wa" onclick="abrirModalWA(); return false;">
+        <div class="nav-item-wa-header">
+          <div class="nav-item-wa-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.135.558 4.14 1.535 5.875L0 24l6.317-1.507A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.882a9.87 9.87 0 0 1-5.017-1.368l-.36-.214-3.742.982.999-3.648-.234-.374A9.859 9.859 0 0 1 2.118 12C2.118 6.533 6.533 2.118 12 2.118c5.466 0 9.882 4.415 9.882 9.882 0 5.466-4.416 9.882-9.882 9.882z"/></svg>
+          </div>
+          <div class="nav-item-wa-info">
+            <span class="nav-item-wa-label">WhatsApp</span>
+            <span class="nav-item-wa-status" id="sidebar-wa-status">
+              <span class="nav-item-wa-dot" id="sidebar-wa-dot"></span>
+              <span id="sidebar-wa-text">Desconectado</span>
+            </span>
+          </div>
+        </div>
+        <button class="nav-item-wa-btn" id="sidebar-wa-btn">Conectar</button>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-badge">
+        <div class="user-avatar">TC</div>
+        <div class="user-info">
+          <span class="user-name">Tech Corretor</span>
+          <span class="user-role" id="user-email">Conectando...</span>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="logout()" title="Sair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <div class="main-wrapper">
+
+    <!-- ===== PAGE: DASHBOARD ===== -->
+    <div id="page-dashboard" class="page">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <div>
+          <h2 class="page-title">Dashboard</h2>
+          <span class="page-sub">Gestão de contratos e proprietários</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="abrirModalMensagem()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Enviar mensagem
+        </button>
+      </div>
+    </header>
+
+    <!-- KPI Cards -->
+    <section class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-value" id="kpiTotal">0</span>
+          <span class="kpi-label">Total de proprietários</span>
+        </div>
+      </div>
+      <div class="kpi-card kpi-card-clickable" onclick="setChip('vencidos')">
+        <div class="kpi-icon kpi-red">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-value" id="qtdVencidos">0</span>
+          <span class="kpi-label">Contratos vencidos</span>
+        </div>
+        <span class="kpi-badge kpi-badge-red">Ver todos →</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon kpi-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-value" id="kpiAtivos">0</span>
+          <span class="kpi-label">Contratos ativos</span>
+        </div>
+      </div>
+      <div class="kpi-card kpi-card-clickable" onclick="setChip('aniversariantes')">
+        <div class="kpi-icon kpi-purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-value" id="kpiAniversariantes">0</span>
+          <span class="kpi-label">Aniversários hoje</span>
+        </div>
+        <span class="kpi-badge kpi-badge-purple">Ver todos →</span>
+      </div>
+    </section>
+
+    <!-- Toolbar / Filtros -->
+    <section class="toolbar">
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="campoPesquisa" placeholder="Pesquisar por nome, apartamento, condomínio..." oninput="pesquisar()" />
+        <button class="search-clear" id="btnLimpar" onclick="limparPesquisa()" style="display:none;">✕</button>
+      </div>
+
+      <div class="filter-chips">
+        <button class="chip chip-active" id="chip-todos"            onclick="setChip('todos')">Todos</button>
+        <button class="chip chip-red"    id="chip-vencidos"         onclick="setChip('vencidos')">🔴 Vencidos</button>
+        <button class="chip chip-purple" id="chip-aniversariantes"  onclick="setChip('aniversariantes')">🎂 Aniversários</button>
+      </div>
+
+
+    </section>
+
+    <!-- Table -->
+    <section class="table-section">
+      <div class="table-card">
+        <div class="table-header">
+          <span class="table-title">Proprietários <span class="table-count" id="tableCount">0</span></span>
+          <button class="btn btn-primary btn-sm-icon" onclick="abrirFormCliente()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Novo cliente
+          </button>
+        </div>
+        <div class="table-wrapper">
+          <table id="tabelaImoveis">
+            <thead>
+              <tr>
+                <th>Proprietário</th>
+                <th>Telefone</th>
+                <th>Apartamento</th>
+                <th>Nascimento</th>
+                <th>Início contrato</th>
+                <th>Término contrato</th>
+                <th>Condomínio</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="corpoTabela"></tbody>
+          </table>
+          <div id="semResultados" class="sem-resultados" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <p>Nenhum resultado encontrado</p>
+          </div>
+        </div>
+        </div>
+      </section>
+
+    </div><!-- /page-dashboard -->
+
+    <!-- ===== PAGE: PROPRIEDADES ===== -->
+    <div id="page-propriedades" class="page" style="display:none;">
+
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div>
+            <h2 class="page-title">Propriedades</h2>
+            <span class="page-sub">Cadastre e divulgue imóveis para seus clientes</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button class="btn btn-primary" onclick="abrirFormProp()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nova propriedade
+          </button>
+        </div>
+      </header>
+
+      <section class="props-section">
+        <div id="props-empty" class="props-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="60" height="60"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <p>Nenhuma propriedade cadastrada</p>
+          <span>Clique em <strong>Nova propriedade</strong> para começar</span>
+          <button class="btn btn-primary" style="margin-top:8px" onclick="abrirFormProp()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nova propriedade
+          </button>
+        </div>
+        <div id="props-grid" class="props-grid" style="display:none;"></div>
+      </section>
+
+    </div><!-- /page-propriedades -->
+
+  </div><!-- /main-wrapper -->  <!-- ===== MODAL MENSAGEM ===== -->
+  <div id="modalMsg" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="modalTitulo">Enviar mensagem</h2>
+        <button class="modal-close" onclick="fecharModal()">✕</button>
+      </div>
+      <p id="modalTexto"></p>
+      <div id="modalLista" class="modal-lista"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ===== MODAL FORM CLIENTE ===== -->
+  <div id="modalCliente" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-form">
+      <div class="modal-header">
+        <h2 id="formTitulo">Novo cliente</h2>
+        <button class="modal-close" onclick="fecharFormCliente()">✕</button>
+      </div>
+
+      <form id="formCliente" class="client-form" onsubmit="salvarCliente(event)">
+        <input type="hidden" id="clienteIndex" value="-1" />
+
+        <div class="form-row">
+          <div class="form-group form-col-2">
+            <label for="f-nome">Nome completo <span class="req">*</span></label>
+            <input type="text" id="f-nome" placeholder="Ex: João da Silva" required />
+          </div>
+          <div class="form-group">
+            <label for="f-telefone">Telefone <span class="req">*</span></label>
+            <input type="text" id="f-telefone" placeholder="(81) 99999-9999" maxlength="15" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-apartamento">Nº Apartamento <span class="req">*</span></label>
+            <input type="text" id="f-apartamento" placeholder="Ex: 1401" required />
+          </div>
+          <div class="form-group">
+            <label for="f-condominio">Condomínio <span class="req">*</span></label>
+            <input type="text" id="f-condominio" placeholder="Ex: Praça dos Jacarandas" required />
+          </div>
+          <div class="form-group">
+            <label for="f-nascimento">Data de nascimento <span class="req">*</span></label>
+            <input type="text" id="f-nascimento" placeholder="DD/MM/AAAA" maxlength="10" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-inicio">Início do contrato <span class="req">*</span></label>
+            <input type="text" id="f-inicio" placeholder="DD/MM/AAAA" maxlength="10" required />
+          </div>
+          <div class="form-group">
+            <label for="f-termino">Término do contrato <span class="req">*</span></label>
+            <input type="text" id="f-termino" placeholder="DD/MM/AAAA" maxlength="10" required />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="fecharFormCliente()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnSalvar">Salvar cliente</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL CONFIRMAR EXCLUSÃO ===== -->
+  <div id="modalConfirm" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-confirm">
+      <div class="modal-header">
+        <h2 id="confirm-titulo">Remover cliente</h2>
+        <button class="modal-close" onclick="fecharConfirm()">✕</button>
+      </div>
+      <div class="confirm-body">
+        <div class="confirm-icon">🗑️</div>
+        <p>Tem certeza que deseja remover <strong id="confirmNome"></strong>?</p>
+        <p class="confirm-sub">Esta ação não pode ser desfeita.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharConfirm()">Cancelar</button>
+        <button class="btn btn-danger" id="btnConfirmRemover" onclick="confirmarRemocao()">Remover</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL WHATSAPP ===== -->
+  <div id="modalWA" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-wa">
+      <div class="modal-header">
+        <h2>
+          <svg viewBox="0 0 24 24" fill="#25d366" width="20" height="20" style="vertical-align:middle;margin-right:6px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.135.558 4.14 1.535 5.875L0 24l6.317-1.507A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.882a9.87 9.87 0 0 1-5.017-1.368l-.36-.214-3.742.982.999-3.648-.234-.374A9.859 9.859 0 0 1 2.118 12C2.118 6.533 6.533 2.118 12 2.118c5.466 0 9.882 4.415 9.882 9.882 0 5.466-4.416 9.882-9.882 9.882z"/></svg>
+          WhatsApp Web
+        </h2>
+        <button class="modal-close" onclick="fecharModalWA()">✕</button>
+      </div>
+
+      <!-- Estado: desconectado -->
+      <div id="wa-state-desconectado" class="wa-state">
+        <div class="wa-illustration">
+          <svg viewBox="0 0 24 24" fill="#25d366" width="64" height="64"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.135.558 4.14 1.535 5.875L0 24l6.317-1.507A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.882a9.87 9.87 0 0 1-5.017-1.368l-.36-.214-3.742.982.999-3.648-.234-.374A9.859 9.859 0 0 1 2.118 12C2.118 6.533 6.533 2.118 12 2.118c5.466 0 9.882 4.415 9.882 9.882 0 5.466-4.416 9.882-9.882 9.882z"/></svg>
+        </div>
+        <h3>Conectar ao WhatsApp</h3>
+        <p>Clique no botão abaixo para gerar o QR Code e conectar seu WhatsApp.</p>
+        <button class="btn btn-wa-lg" onclick="iniciarWA()">Gerar QR Code</button>
+      </div>
+
+      <!-- Estado: carregando/qr -->
+      <div id="wa-state-qr" class="wa-state" style="display:none;">
+        <div class="wa-steps">
+          <p>1. Abra o <strong>WhatsApp</strong> no seu celular</p>
+          <p>2. Toque em <strong>Mais opções ⋮</strong> ou <strong>Configurações</strong></p>
+          <p>3. Toque em <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong></p>
+          <p>4. Aponte a câmera para o QR Code abaixo</p>
+        </div>
+        <div class="wa-qr-wrapper">
+          <div id="wa-qr-spinner" class="wa-spinner">
+            <div class="spinner-ring"></div>
+            <span>Gerando QR Code...</span>
+          </div>
+          <img id="wa-qr-img" src="" alt="QR Code" style="display:none;" />
+        </div>
+        <p class="wa-qr-hint">O QR Code expira em 60 segundos. Se expirar, clique em Recarregar.</p>
+        <button class="btn btn-ghost" onclick="iniciarWA()">🔄 Recarregar QR</button>
+      </div>
+
+      <!-- Estado: conectando/autenticando -->
+      <div id="wa-state-conectando" class="wa-state" style="display:none;">
+        <div class="wa-connecting">
+          <div class="spinner-ring spinner-green"></div>
+          <h3>Conectando...</h3>
+          <p id="wa-connecting-msg">Autenticando sessão, aguarde.</p>
+          <div id="wa-connecting-timeout" style="display:none;margin-top:16px;text-align:center;">
+            <p style="font-size:13px;color:var(--text-muted)">Está demorando muito? A sessão pode estar corrompida.</p>
+            <button class="btn btn-ghost btn-sm" onclick="limparSessaoWA()">🗑️ Limpar Sessão e Reconectar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Estado: pronto -->
+      <div id="wa-state-pronto" class="wa-state" style="display:none;">
+        <div class="wa-connected">
+          <div class="wa-check">✓</div>
+          <h3>WhatsApp conectado!</h3>
+          <p>Você pode agora enviar mensagens diretamente pelo painel.</p>
+          <button class="btn btn-ghost btn-sm" onclick="desconectarWA()">Desconectar</button>
+        </div>
+      </div>
+
+      <!-- Estado: erro -->
+      <div id="wa-state-erro" class="wa-state" style="display:none;">
+        <div class="wa-error">
+          <div class="wa-error-icon">✕</div>
+          <h3>Erro de conexão</h3>
+          <p id="wa-error-msg"></p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn btn-wa-lg" onclick="iniciarWA()">Tentar novamente</button>
+            <button class="btn btn-ghost" onclick="limparSessaoWA()">🗑️ Limpar Sessão</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div id="wa-status-bar" class="wa-status-bar">
+          <span class="wa-dot-sm" id="waStatusDot"></span>
+          <span id="waStatusText">Desconectado</span>
+        </div>
+        <button class="btn btn-outline-sm" onclick="continuarSemWA()" id="wa-skip-btn">Continuar sem conectar</button>
+        <button class="btn btn-ghost" onclick="fecharModalWA()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL FORM PROPRIEDADE ===== -->
+  <div id="modalProp" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-prop">
+      <div class="modal-header">
+        <h2 id="prop-form-titulo">Nova propriedade</h2>
+        <button class="modal-close" onclick="fecharFormProp()">✕</button>
+      </div>
+      <form id="formProp" class="prop-form" onsubmit="salvarProp(event)">
+        <input type="hidden" id="prop-id" value="-1" />
+
+        <div class="form-row">
+          <div class="form-group form-col-2">
+            <label for="p-titulo">Título <span class="req">*</span></label>
+            <input type="text" id="p-titulo" placeholder="Ex: Apartamento 3 quartos no Boa Vista" required />
+          </div>
+          <div class="form-group">
+            <label for="p-tipo">Tipo</label>
+            <select id="p-tipo">
+              <option value="Apartamento">Apartamento</option>
+              <option value="Casa">Casa</option>
+              <option value="Cobertura">Cobertura</option>
+              <option value="Comercial">Comercial</option>
+              <option value="Terreno">Terreno</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group form-col-2">
+            <label for="p-endereco">Endereço <span class="req">*</span></label>
+            <input type="text" id="p-endereco" placeholder="Ex: Rua das Flores, 123" required />
+          </div>
+          <div class="form-group">
+            <label for="p-bairro">Bairro</label>
+            <input type="text" id="p-bairro" placeholder="Ex: Boa Vista" />
+          </div>
+          <div class="form-group">
+            <label for="p-cidade">Cidade</label>
+            <input type="text" id="p-cidade" placeholder="Ex: Recife" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="p-preco">Preço <span class="req">*</span></label>
+            <input type="text" id="p-preco" placeholder="R$ 450.000" required />
+          </div>
+          <div class="form-group">
+            <label for="p-area">Área</label>
+            <input type="text" id="p-area" placeholder="95m²" />
+          </div>
+          <div class="form-group">
+            <label for="p-quartos">Quartos</label>
+            <input type="number" id="p-quartos" placeholder="0" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="p-banheiros">Banheiros</label>
+            <input type="number" id="p-banheiros" placeholder="0" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="p-vagas">Vagas</label>
+            <input type="number" id="p-vagas" placeholder="0" min="0" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label for="p-desc">Descrição</label>
+            <textarea id="p-desc" placeholder="Descreva o imóvel: características, diferenciais, localização..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>Fotos do imóvel <span style="font-weight:400;color:var(--text-light)">(até 10 imagens)</span></label>
+            <div class="fotos-grid" id="fotos-grid">
+              <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <span>Adicionar foto</span>
+              </div>
+            </div>
+            <input type="file" id="p-fotos" accept="image/*" multiple style="display:none;" onchange="handleFotos(event)" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="fecharFormProp()">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar propriedade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL DISPARO ===== -->
+  <div id="modalDisparo" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-disparo">
+      <div class="modal-header">
+        <h2 id="disparo-titulo">📤 Disparar para clientes</h2>
+        <button class="modal-close" onclick="fecharModalDisparo()">✕</button>
+      </div>
+
+      <div class="disparo-suggestions" id="disparo-suggestions">
+        <button class="sug-btn active" onclick="aplicarSugestao('livre')" id="sug-livre">
+          <span class="sug-icon">✏️</span>
+          <span class="sug-label">Livre</span>
+        </button>
+        <button class="sug-btn" onclick="aplicarSugestao('aniversario')" id="sug-aniversario">
+          <span class="sug-icon">🎂</span>
+          <span class="sug-label">Aniversário</span>
+        </button>
+        <button class="sug-btn" onclick="aplicarSugestao('contrato_vencido')" id="sug-contrato_vencido">
+          <span class="sug-icon">📋</span>
+          <span class="sug-label">Contrato vencido</span>
+        </button>
+        <button class="sug-btn" onclick="aplicarSugestao('ano_novo')" id="sug-ano_novo">
+          <span class="sug-icon">🎆</span>
+          <span class="sug-label">Ano Novo</span>
+        </button>
+      </div>
+
+      <div class="disparo-preview">
+        <div class="disparo-preview-title">✉️ Mensagem (editável)</div>
+        <textarea id="disparo-mensagem" rows="7"></textarea>
+        <div class="disparo-placeholders" id="disparo-placeholders" onclick="this.classList.toggle('open')">
+          <span class="disparo-placeholders-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Placeholders disponíveis
+            <svg class="disparo-placeholders-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <div class="disparo-placeholders-list">
+            <code>{nome}</code> <code>{apartamento}</code> <code>{condominio}</code>
+            <code>{telefone}</code> <code>{nascimento}</code>
+            <code>{inicioContrato}</code> <code>{terminoContrato}</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="disparo-clientes-header">
+        <span>Destinatários</span>
+        <div class="disparo-clientes-header-btns">
+          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(true)">Todos</button>
+          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(false)">Nenhum</button>
+        </div>
+      </div>
+
+      <div class="disparo-lista" id="disparo-lista"></div>
+      <p class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</p>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModalDisparo()">Cancelar</button>
+        <button class="btn btn-primary" onclick="dispararPropriedade()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Enviar via WhatsApp
+        </button>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /app-container -->
+
+  <!-- ===== PAGE: CONFIGURAÇÕES ===== -->
+  <div id="page-configuracoes" class="page" style="display:none;">
+    <div class="topbar">
+      <h1 class="topbar-title">⚙️ Configurações</h1>
+    </div>
+    <div class="page-body" style="padding:32px; max-width:600px;">
+
+      <!-- Badge modo atual (atualizado dinamicamente) -->
+      <div id="cfg-mode-badge" class="cfg-badge cfg-badge-local">💻 Local (este computador)</div>
+
+      <!-- Card automático (browser/cloud) -->
+      <div id="cfg-card-auto" class="cfg-card" style="display:none;">
+        <h3 class="cfg-card-title">☁️ Modo Automático — Servidor na Nuvem</h3>
+        <p class="cfg-card-desc">Você está acessando pelo <strong>navegador</strong>. O app detectou automaticamente que está conectado ao servidor na nuvem (<code id="cfg-auto-url"></code>).<br><br>Não é necessário nenhuma configuração — o WhatsApp roda no servidor 24/7.</p>
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;font-size:.85rem;color:#166534;">
+          ✅ <strong>Funciona no iPhone, Android e qualquer dispositivo.</strong>
+        </div>
+      </div>
+
+      <!-- Card manual (Electron/desktop) -->
+      <div id="cfg-card-manual" class="cfg-card">
+        <h3 class="cfg-card-title">🖥️ Modo de Servidor WhatsApp</h3>
+        <p class="cfg-card-desc">Escolha onde o WhatsApp vai rodar. No modo Local funciona apenas neste computador. No modo Google Cloud funciona em qualquer dispositivo, inclusive iPhone.</p>
+
+        <label class="cfg-radio-label">
+          <input type="radio" name="cfg-mode" id="cfg-mode-local" value="local" onchange="cfgTrocarModo('local')" />
+          <div class="cfg-radio-content">
+            <span class="cfg-radio-icon">💻</span>
+            <div>
+              <strong>Local (padrão)</strong>
+              <span>WhatsApp roda neste computador. Não precisa de internet extra.</span>
+            </div>
+          </div>
+        </label>
+
+        <label class="cfg-radio-label">
+          <input type="radio" name="cfg-mode" id="cfg-mode-cloud" value="cloud" onchange="cfgTrocarModo('cloud')" />
+          <div class="cfg-radio-content">
+            <span class="cfg-radio-icon">☁️</span>
+            <div>
+              <strong>Google Cloud (servidor)</strong>
+              <span>WhatsApp roda no servidor 24/7. Funciona no iPhone e em qualquer lugar.</span>
+            </div>
+          </div>
+        </label>
+
+        <div id="cfg-url-row" style="display:none; flex-direction:column; gap:8px; margin-top:16px;">
+          <label class="cfg-input-label">URL do servidor Google Cloud</label>
+          <input id="cfg-server-url" type="url" class="cfg-input"
+            placeholder="http://34.121.96.26:3000" />
+          <span class="cfg-input-hint">💡 IP externo do seu servidor com a porta 3000</span>
+        </div>
+
+        <button class="btn-primary" style="margin-top:24px; width:100%;" onclick="salvarConfiguracaoServidor()">
+          💾 Salvar e Reconectar
+        </button>
+      </div>
+
+      <div class="cfg-card" style="margin-top:20px;">
+        <h3 class="cfg-card-title">📋 Como configurar o Servidor (Google Cloud)</h3>
+
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:#166534;">
+          ⭐ <strong>Recomendado:</strong> Google Cloud dá <strong>$300 grátis</strong> por 90 dias + VM <strong>e2-micro grátis para sempre</strong> depois.
+        </div>
+
+        <ol class="cfg-steps">
+          <li>Acesse <strong>cloud.google.com</strong> → clique em <em>"Comece gratuitamente"</em></li>
+          <li>Faça login com sua <strong>conta Google</strong> (Gmail já serve)</li>
+          <li>Vá em <em>Compute Engine → VM Instances → Create Instance</em></li>
+          <li>Configure a VM:
+            <ul style="margin-top:6px;padding-left:16px;line-height:2;">
+              <li><strong>Machine type:</strong> <code>e2-standard-2</code> (2 CPU, 8GB RAM)</li>
+              <li><strong>Boot disk:</strong> Debian 12 ou Ubuntu 22.04</li>
+              <li><strong>Firewall:</strong> marque ✅ "Allow HTTP traffic"</li>
+            </ul>
+          </li>
+          <li>Clique em <em>"SSH"</em> para abrir o terminal do servidor</li>
+          <li>Cole e rode o script de instalação:</li>
+        </ol>
+        <pre class="cfg-code">curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/main/setup-gcloud.sh | bash</pre>
+        <ol class="cfg-steps" start="7">
+          <li>Anote o <strong>External IP</strong> da VM (ex: <code>34.95.100.50</code>)</li>
+          <li>Abra a porta 3000: <em>VPC Network → Firewall → Create Rule → TCP 3000</em></li>
+          <li>Volte aqui, selecione <strong>Oracle Cloud</strong> e cole: <code>http://34.95.100.50:3000</code></li>
+        </ol>
+
+        <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:.82rem;color:#854d0e;">
+          💡 <strong>Dica:</strong> Após escanear o QR Code no servidor, o WhatsApp fica conectado 24/7 — mesmo com o computador desligado.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
