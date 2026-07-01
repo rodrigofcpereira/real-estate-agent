@@ -53,7 +53,7 @@
       "gatekeeperAssess": false
     },
     "win": {
-      "executableName": "Tech Corretor",
+      "executableName": "TechCorretor",
       "artifactName": "Tech Corretor.exe",
       "target": [
         "nsis"
@@ -63,7 +63,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Tech Corretor"
+      "shortcutName": "Tech Corretor",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "asar": true,
     "asarUnpack": []
