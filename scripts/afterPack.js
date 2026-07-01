@@ -19,7 +19,7 @@ module.exports = async function afterPack(context) {
   const { appOutDir, packager } = context;
   if (packager.platform.name !== 'mac') return;
 
-  const productName = packager.appInfo.productName;          // "LF Imóveis"
+  const productName = packager.appInfo.productName;          // "Tech Corretor"
   const builtApp    = path.join(appOutDir, `${productName}.app`);
   const srcElectron = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'Electron.app');
 

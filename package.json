@@ -1,7 +1,7 @@
 {
-  "name": "lf-imoveis",
+  "name": "tech-corretor",
   "version": "1.0.0",
-  "description": "LF Imóveis - Gerenciamento de clientes e WhatsApp",
+  "description": "Tech Corretor - Gerenciamento de clientes e WhatsApp",
   "main": "main.js",
   "scripts": {
     "start": "node server.js",
@@ -15,8 +15,8 @@
   },
   "build": {
     "afterPack": "scripts/afterPack.js",
-    "appId": "com.lfimoveis.app",
-    "productName": "LF Imóveis",
+    "appId": "com.techcorretor.app",
+    "productName": "Tech Corretor",
     "files": [
       "main.js",
       "server.js",

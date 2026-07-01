@@ -1,5 +1,5 @@
 // =============================================
-//  LF Imóveis – server.js
+//  Tech Corretor – server.js
 //  Backend WhatsApp Web via whatsapp-web.js
 // =============================================
 
@@ -435,7 +435,7 @@ app.post("/api/iniciar", (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   limparLockChrome(); // garante que não há locks stale da execução anterior
-  console.log(`\n🚀 Servidor LF Imóveis rodando em http://localhost:${PORT}`);
+  console.log(`\n🚀 Servidor Tech Corretor rodando em http://localhost:${PORT}`);
   console.log("📋 Abra o navegador e use o painel normalmente.");
   console.log("📱 Clique em 'Conectar WhatsApp' para escanear o QR Code.\n");
 });

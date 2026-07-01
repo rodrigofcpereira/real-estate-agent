@@ -1,4 +1,4 @@
-app = "lf-imoveis-backend"
+app = "tech-corretor-backend"
 
 [build]
   dockerfile = "Dockerfile"

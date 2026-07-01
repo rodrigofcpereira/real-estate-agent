@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # ============================================================
-#  deploy.sh — LF Imóveis
+#  deploy.sh — Tech Corretor
 #  Gera DMG (macOS) e EXE (Windows), faz upload para o
 #  Firebase Storage e publica o site via Firebase Hosting.
 #

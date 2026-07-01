@@ -1,4 +1,4 @@
-# LF Imóveis
+# Tech Corretor
 
 Aplicativo web de gestão de contratos imobiliários.
 

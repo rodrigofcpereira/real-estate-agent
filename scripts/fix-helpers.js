@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-const appName = "LF Im\u00f3veis";
+const appName = "Tech Corretor";
 
 function findBuildApp() {
   const distDir = path.join(__dirname, "..", "dist", "mac-arm64");
@@ -40,14 +40,14 @@ for (const variant of variants) {
   const [origExe] = fs.readdirSync(macosDir).filter(f => f.startsWith("Electron"));
   if (!origExe) throw new Error(`No executable found in ${macosDir}`);
 
-  // The new executable name: for "Helper" → "LF Imóveis Helper", for "Helper (GPU)" → "LF Imóveis Helper (GPU)"
+  // The new executable name: for "Helper" → "Tech Corretor Helper", for "Helper (GPU)" → "Tech Corretor Helper (GPU)"
   const newExeName = `${appName} ${variant}`;
   fs.renameSync(path.join(macosDir, origExe), path.join(macosDir, newExeName));
 
   // Update Info.plist to match the new executable name and bundle ID
   const plistPath = path.join(dstPath, "Contents", "Info.plist");
   execSync(`plutil -replace CFBundleExecutable -string "${newExeName}" "${plistPath}"`);
-  execSync(`plutil -replace CFBundleIdentifier -string "com.lfimoveis.app.helper" "${plistPath}"`);
+  execSync(`plutil -replace CFBundleIdentifier -string "com.techcorretor.app.helper" "${plistPath}"`);
 
   // Don't add CFBundleVersion; the original plist doesn't have it and adding it
   // would invalidate the linker signature's implicit Info.plist hash.

@@ -1,5 +1,5 @@
 // =============================================
-//  LF Imóveis – app.js
+//  Tech Corretor – app.js
 //  Dados de exemplo + toda a lógica da interface
 // =============================================
 
@@ -760,13 +760,13 @@ function aplicarSugestao(tipo) {
 
   if (tipo === "aniversario") {
     clientes = todosOsDados.filter(isAniversariante);
-    msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
+    msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe Tech Corretor deseja um dia incrível para você!`;
   } else if (tipo === "contrato_vencido") {
     clientes = todosOsDados.filter(isVencido);
     msgFn = r => `Olá, {nome}! Seu contrato do apartamento {apartamento} venceu em {terminoContrato}. Entre em contato para renovação.`;
   } else if (tipo === "ano_novo") {
     clientes = todosOsDados;
-    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 A LF Imóveis agradece sua confiança e deseja realizações incríveis!`;
+    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 A Tech Corretor agradece sua confiança e deseja realizações incríveis!`;
   }
 
   // Destaca o botão ativo
@@ -1284,7 +1284,7 @@ function gerarMensagemProp(prop) {
   linhas.push('');
   if (prop.preco) linhas.push(`💰 *${prop.preco}*`);
   linhas.push('');
-  linhas.push('📞 Entre em contato com *LF Imóveis* para mais informações!');
+  linhas.push('📞 Entre em contato com *Tech Corretor* para mais informações!');
 
   return linhas.join('\n');
 }

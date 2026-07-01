@@ -138,7 +138,7 @@ if (!gotTheLock) {
       height: 900,
       minWidth: 900,
       minHeight: 600,
-      title: "LF Imóveis",
+      title: "Tech Corretor",
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
