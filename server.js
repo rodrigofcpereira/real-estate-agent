@@ -320,6 +320,9 @@ io.on("connection", (socket) => {
 });
 
 // ---- Utilitário: formatar e validar número ----
+// Cache de números já verificados para não consultar o WhatsApp toda vez
+const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } ou null
+
 async function resolverNumero(telefone) {
   // Remove tudo que não é dígito
   let numero = telefone.replace(/\D/g, "");
@@ -327,22 +330,44 @@ async function resolverNumero(telefone) {
   // Garante DDI 55 (Brasil)
   if (!numero.startsWith("55")) numero = "55" + numero;
 
-  // Tenta número normal (ex: 5581999999999)
-  // e também versão sem o 9 extra (para fixos e regiões antigas)
+  // Verifica cache primeiro
+  if (_cacheNumeros.has(numero)) {
+    const cached = _cacheNumeros.get(numero);
+    logFile(`📋 Cache: ${numero} → ${cached ? "encontrado" : "não registrado"}`);
+    return cached;
+  }
+
+  // Tenta número normal e também sem o 9 extra (regiões antigas)
   const candidatos = [numero];
   if (numero.length === 13 && numero[4] === "9") {
-    // 5581 9XXXX-XXXX → tenta também 5581 XXXX-XXXX
     candidatos.push(numero.slice(0, 4) + numero.slice(5));
   }
 
   for (const candidato of candidatos) {
     try {
-      const numberId = await clienteWA.getNumberId(candidato);
-      if (numberId) return { chatId: numberId._serialized, numero: candidato };
-    } catch (_) {}
+      // Timeout de 8s por número para não travar o lote inteiro
+      const numberId = await Promise.race([
+        clienteWA.getNumberId(candidato),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000))
+      ]);
+      if (numberId) {
+        const resultado = { chatId: numberId._serialized, numero: candidato };
+        _cacheNumeros.set(numero, resultado); // salva no cache
+        return resultado;
+      }
+    } catch (err) {
+      if (err.message === "timeout") {
+        // Timeout na verificação — monta chatId direto sem validar
+        logFile(`⚠️  Timeout ao verificar ${candidato} — enviando sem validar`);
+        const resultado = { chatId: `${candidato}@c.us`, numero: candidato };
+        _cacheNumeros.set(numero, resultado);
+        return resultado;
+      }
+    }
   }
 
-  return null; // número não encontrado no WhatsApp
+  _cacheNumeros.set(numero, null); // salva null para não tentar de novo
+  return null;
 }
 
 // ---- Utilitário: construir MessageMedia a partir de dataURL base64 ----
@@ -396,47 +421,47 @@ app.post("/api/send-batch", async (req, res) => {
     .map((f, i) => dataURLparaMedia(f, `imovel_${i + 1}.jpg`))
     .filter(Boolean);
 
-  // Dispara todos em paralelo
-  const promessas = mensagens.map(async (item) => {
+  // Dispara em sequência (mais estável no VPS com pouca RAM)
+  const resultados = [];
+  for (const item of mensagens) {
     let resolvido = null;
     try {
       resolvido = await resolverNumero(item.telefone || "");
     } catch (err) {
-      return { numero: item.telefone, ok: false, erro: "Erro ao verificar número" };
+      resultados.push({ numero: item.telefone, ok: false, erro: "Erro ao verificar número" });
+      continue;
     }
 
     if (!resolvido) {
-      return {
+      resultados.push({
         numero: item.telefone,
         ok: false,
         erro: `Número não registrado no WhatsApp (${item.telefone})`
-      };
+      });
+      continue;
     }
 
     try {
       if (medias.length === 0) {
-        // Só texto
         await clienteWA.sendMessage(resolvido.chatId, item.mensagem);
       } else if (medias.length === 1) {
-        // Uma foto com legenda
         await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: item.mensagem });
       } else {
-        // Primeira foto com legenda
         await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: item.mensagem });
-        // Demais fotos como galeria (sem legenda, em sequência)
         for (let i = 1; i < medias.length; i++) {
           await clienteWA.sendMessage(resolvido.chatId, medias[i]);
         }
       }
       console.log(`📤 Enviado → ${resolvido.numero} (${medias.length} foto(s))`);
-      return { numero: resolvido.numero, ok: true };
+      resultados.push({ numero: resolvido.numero, ok: true });
     } catch (err) {
       console.error(`❌ Falha → ${resolvido.numero}:`, err.message);
-      return { numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` };
+      resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
     }
-  });
 
-  const resultados = await Promise.all(promessas);
+    // Pequena pausa entre mensagens para não sobrecarregar o WhatsApp
+    if (mensagens.length > 1) await new Promise(r => setTimeout(r, 1000));
+  }
 
   const qtdOk  = resultados.filter(r => r.ok).length;
   const qtdErr = resultados.filter(r => !r.ok).length;

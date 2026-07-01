@@ -1403,6 +1403,16 @@ async function dispararPropriedade() {
   if (waStatus === "pronto" && socket) {
     await enviarViaBackend(titulo, selecionados, fnMensagem, fotos);
   } else {
+    // Mostra status atual para o usuário entender o que está acontecendo
+    const statusMsg = {
+      "desconectado": "WhatsApp desconectado. Clique em 'Conectar' na barra lateral.",
+      "conectando":   "WhatsApp ainda conectando, aguarde e tente novamente em alguns segundos.",
+      "qr":           "Escaneie o QR Code antes de enviar.",
+      "autenticado":  "WhatsApp autenticando, aguarde alguns segundos e tente novamente.",
+      "erro":         "Erro na conexão WhatsApp. Clique em 'Reconectar' na barra lateral.",
+    };
+    const msg = statusMsg[waStatus] || "WhatsApp não está pronto. Conecte-o primeiro.";
+
     const links = selecionados.map(c => {
       const tel = c.telefone.replace(/\D/g, "");
       const msg = fnMensagem(c);
@@ -1412,7 +1422,7 @@ async function dispararPropriedade() {
       };
     });
     abrirModal(titulo,
-      `${selecionados.length} cliente(s) selecionado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
+      `⚠️ ${msg}\n\nOu envie manualmente clicando nos links abaixo:`,
       links);
   }
 }
