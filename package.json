@@ -11,7 +11,7 @@
     "rebuild": "electron-rebuild -f -w whatsapp-web.js",
     "dist": "electron-builder build",
     "dist:mac": "npm run prepare-chromium && npm run rebuild && electron-builder build --mac",
-    "dist:win": "npm run rebuild && electron-builder build --win"
+    "dist:win": "npm run rebuild && electron-builder build --win --x64"
   },
   "build": {
     "afterPack": "scripts/afterPack.js",
