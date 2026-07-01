@@ -41,7 +41,35 @@ if (!gotTheLock) {
   function findChromiumPath() {
     if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
 
-    // 1. Prefere o Chrome do cache do puppeteer — funciona de forma confiável no macOS
+    // ── Windows: procura Chrome ou Edge instalado no sistema ──────────────
+    if (process.platform === "win32") {
+      const pf   = process.env["PROGRAMFILES"]       || "C:\\Program Files";
+      const pf86 = process.env["PROGRAMFILES(X86)"]  || "C:\\Program Files (x86)";
+      const local = process.env["LOCALAPPDATA"]       || "";
+
+      const candidates = [
+        // Google Chrome
+        path.join(pf,   "Google\\Chrome\\Application\\chrome.exe"),
+        path.join(pf86, "Google\\Chrome\\Application\\chrome.exe"),
+        path.join(local,"Google\\Chrome\\Application\\chrome.exe"),
+        // Microsoft Edge (pré-instalado em todos os Windows 10/11)
+        path.join(pf,   "Microsoft\\Edge\\Application\\msedge.exe"),
+        path.join(pf86, "Microsoft\\Edge\\Application\\msedge.exe"),
+        path.join(local,"Microsoft\\Edge\\Application\\msedge.exe"),
+      ];
+
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          console.log("[main] Usando browser do sistema (Windows):", p);
+          return p;
+        }
+      }
+
+      console.error("[main] Nenhum Chrome/Edge encontrado no Windows!");
+      return "";
+    }
+
+    // ── macOS/Linux: prefere o Chrome do cache do puppeteer ───────────────
     try {
       const puppeteer = require("puppeteer");
       const p = puppeteer.executablePath();
@@ -51,7 +79,7 @@ if (!gotTheLock) {
       }
     } catch (_) {}
 
-    // 2. Fallback: Chrome bundled no app (pode não funcionar quando aninhado em outro bundle)
+    // Fallback: Chrome bundled no app (macOS)
     const dirs = [
       path.join(process.resourcesPath || "", "chromium"),
       path.join(process.resourcesPath || "", "app.asar.unpacked", "resources", "chromium"),
@@ -142,8 +170,17 @@ if (!gotTheLock) {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        zoomFactor: 1.0,
       },
     });
+
+    // Corrige DPI scaling no Windows (evita layout borrado/quebrado em telas 150%)
+    if (process.platform === "win32") {
+      mainWindow.webContents.setZoomFactor(1.0);
+      mainWindow.webContents.on("did-finish-load", () => {
+        mainWindow.webContents.setZoomFactor(1.0);
+      });
+    }
 
     mainWindow.loadURL(`http://localhost:${serverPort}`);
     mainWindow.on("closed", () => { mainWindow = null; });
