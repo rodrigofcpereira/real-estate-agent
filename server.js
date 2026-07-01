@@ -182,12 +182,17 @@ async function iniciarWhatsApp() {
       } catch (_) {}
     }
 
+    const isCloud = process.platform === "linux";
+
     clienteWA = new Client({
       authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || "./.wwebjs_auth" }),
       puppeteer: puppeteerOpts,
+      // authTimeoutMs: tempo que o Chromium tem para injetar o JS do WhatsApp Web
+      // e2-micro é lento, 30s padrão é insuficiente → usa 120s na VPS
+      authTimeoutMs: isCloud ? 120000 : 45000,
       // 'local' = salva o WhatsApp Web no disco e reutiliza → muito mais rápido no VPS
       // 'none'  = baixa do zero toda vez (lento)
-      webVersionCache: process.platform === "linux"
+      webVersionCache: isCloud
         ? { type: "local" }    // VPS: usa cache para não baixar toda vez
         : { type: "none" },    // Mac/Win local: sempre pega versão atual
       userAgent: process.platform === "win32"
