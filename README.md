@@ -43,3 +43,18 @@ corretor/
 ├── app.js       ← lógica e dados
 └── README.md
 ```
+
+# Deploy completo (gera DMG + EXE + sobe tudo)
+./deploy.sh
+
+# Só macOS
+./deploy.sh --mac
+
+# Só Windows
+./deploy.sh --win
+
+# Só atualiza o site (sem rebuild)
+./deploy.sh --site
+
+# Pula o build, sobe os arquivos existentes em dist/
+./deploy.sh --skip-build

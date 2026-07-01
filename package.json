@@ -42,6 +42,7 @@
     ],
     "mac": {
       "category": "public.app-category.business",
+      "artifactName": "Tech Corretor.dmg",
       "target": [
         "dmg"
       ],
@@ -52,6 +53,8 @@
       "gatekeeperAssess": false
     },
     "win": {
+      "executableName": "Tech Corretor",
+      "artifactName": "Tech Corretor.exe",
       "target": [
         "nsis"
       ],
@@ -59,7 +62,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Tech Corretor"
     },
     "asar": true,
     "asarUnpack": []

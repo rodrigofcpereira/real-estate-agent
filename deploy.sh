@@ -33,10 +33,10 @@ section() { echo "\n${BOLD}${CYAN}══ $* ══${NC}"; }
 BUCKET="gs://tech-corretor.firebasestorage.app"
 DIST_DIR="dist"
 PUBLIC_DIR="public"
-DMG_NAME="LF-Imoveis.dmg"
-EXE_NAME="LF-Imoveis-Setup.exe"
-DMG_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/LF-Imoveis.dmg?alt=media"
-EXE_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/LF-Imoveis-Setup.exe?alt=media"
+DMG_NAME="Tech Corretor.dmg"
+EXE_NAME="Tech Corretor.exe"
+DMG_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.dmg?alt=media"
+EXE_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.exe?alt=media"
 
 # ── Flags ────────────────────────────────────────────────────
 BUILD_MAC=true
