@@ -25,11 +25,20 @@ function logFile(msg) {
   try { fs.appendFileSync(LOG_FILE, line); } catch(_) {}
 }
 
+const ALLOWED_ORIGINS = [
+  "https://tech-corretor.web.app",
+  "https://tech-corretor.firebaseapp.com",
+  "http://localhost:3000",
+  /^http:\/\/localhost:\d+$/,   // Electron dev
+];
+
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: "*" } });
+const io     = new Server(server, {
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET","POST"], credentials: true }
+});
 
-app.use(cors());
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: "20mb" })); // suporta imagens em base64
 
 // Servir o app local (app.html como raiz)
