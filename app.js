@@ -4,14 +4,26 @@
 // =============================================
 
 // ---- Servidor backend ----
-// Modo "local": usa o servidor embutido no Electron (padrão)
-// Modo "cloud": usa o servidor Oracle Cloud configurado nas Configurações
+// Detecta automaticamente o ambiente:
+//   • Electron (desktop) → usa servidor local (window.location.origin = localhost)
+//   • Browser (acesso via IP/cloud) → usa o próprio servidor de origem
+//   • Configuração manual nas Configurações sobrescreve apenas no Electron
+function isElectron() {
+  return typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+}
+
 function getAPIBase() {
-  const mode = localStorage.getItem('tc_server_mode') || 'local';
-  if (mode === 'cloud') {
-    const url = (localStorage.getItem('tc_server_url') || '').trim().replace(/\/$/, '');
-    if (url) return url;
+  if (isElectron()) {
+    // App desktop: verifica se usuário configurou cloud manualmente
+    const mode = localStorage.getItem('tc_server_mode') || 'local';
+    if (mode === 'cloud') {
+      const url = (localStorage.getItem('tc_server_url') || '').trim().replace(/\/$/, '');
+      if (url) return url;
+    }
+    // Padrão: servidor local embutido no Electron
+    return window.location.origin;
   }
+  // Browser (iPhone, PC via IP): a origem JÁ É o servidor na nuvem
   return window.location.origin;
 }
 let API_BASE = getAPIBase();
@@ -1410,6 +1422,27 @@ async function dispararPropriedade() {
 // ==============================================
 
 function carregarTelaConfiguracoes() {
+  const cardAuto   = document.getElementById('cfg-card-auto');
+  const cardManual = document.getElementById('cfg-card-manual');
+  const badge      = document.getElementById('cfg-mode-badge');
+  const autoUrl    = document.getElementById('cfg-auto-url');
+
+  if (!isElectron()) {
+    // Browser → modo automático cloud
+    if (cardAuto)   cardAuto.style.display   = 'block';
+    if (cardManual) cardManual.style.display  = 'none';
+    if (autoUrl)    autoUrl.textContent       = window.location.origin;
+    if (badge) {
+      badge.textContent = `☁️ Google Cloud: ${window.location.origin}`;
+      badge.className   = 'cfg-badge cfg-badge-cloud';
+    }
+    return;
+  }
+
+  // Electron → modo manual
+  if (cardAuto)   cardAuto.style.display   = 'none';
+  if (cardManual) cardManual.style.display  = 'block';
+
   const mode = localStorage.getItem('tc_server_mode') || 'local';
   const url  = localStorage.getItem('tc_server_url')  || '';
 
@@ -1417,14 +1450,13 @@ function carregarTelaConfiguracoes() {
   const radioCloud = document.getElementById('cfg-mode-cloud');
   const urlInput   = document.getElementById('cfg-server-url');
   const urlRow     = document.getElementById('cfg-url-row');
-  const badge      = document.getElementById('cfg-mode-badge');
 
   if (radioLocal) radioLocal.checked = (mode === 'local');
   if (radioCloud) radioCloud.checked = (mode === 'cloud');
   if (urlInput)   urlInput.value     = url;
   if (urlRow)     urlRow.style.display = (mode === 'cloud') ? 'flex' : 'none';
   if (badge) {
-    badge.textContent = (mode === 'cloud' && url) ? `☁️ Oracle Cloud: ${url}` : '💻 Local (este computador)';
+    badge.textContent = (mode === 'cloud' && url) ? `☁️ Google Cloud: ${url}` : '💻 Local (este computador)';
     badge.className   = 'cfg-badge ' + (mode === 'cloud' ? 'cfg-badge-cloud' : 'cfg-badge-local');
   }
 }

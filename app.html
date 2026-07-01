@@ -68,10 +68,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Propriedades
       </a>
-      <a href="#" class="nav-item" id="nav-configuracoes" onclick="irPara('configuracoes'); return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Configurações
-      </a>
 
       <div class="sidebar-divider"></div>
 
@@ -616,12 +612,22 @@
     </div>
     <div class="page-body" style="padding:32px; max-width:600px;">
 
-      <!-- Badge modo atual -->
+      <!-- Badge modo atual (atualizado dinamicamente) -->
       <div id="cfg-mode-badge" class="cfg-badge cfg-badge-local">💻 Local (este computador)</div>
 
-      <div class="cfg-card">
+      <!-- Card automático (browser/cloud) -->
+      <div id="cfg-card-auto" class="cfg-card" style="display:none;">
+        <h3 class="cfg-card-title">☁️ Modo Automático — Servidor na Nuvem</h3>
+        <p class="cfg-card-desc">Você está acessando pelo <strong>navegador</strong>. O app detectou automaticamente que está conectado ao servidor na nuvem (<code id="cfg-auto-url"></code>).<br><br>Não é necessário nenhuma configuração — o WhatsApp roda no servidor 24/7.</p>
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;font-size:.85rem;color:#166534;">
+          ✅ <strong>Funciona no iPhone, Android e qualquer dispositivo.</strong>
+        </div>
+      </div>
+
+      <!-- Card manual (Electron/desktop) -->
+      <div id="cfg-card-manual" class="cfg-card">
         <h3 class="cfg-card-title">🖥️ Modo de Servidor WhatsApp</h3>
-        <p class="cfg-card-desc">Escolha onde o WhatsApp vai rodar. No modo Local funciona apenas neste computador. No modo Oracle Cloud funciona em qualquer dispositivo, inclusive iPhone.</p>
+        <p class="cfg-card-desc">Escolha onde o WhatsApp vai rodar. No modo Local funciona apenas neste computador. No modo Google Cloud funciona em qualquer dispositivo, inclusive iPhone.</p>
 
         <label class="cfg-radio-label">
           <input type="radio" name="cfg-mode" id="cfg-mode-local" value="local" onchange="cfgTrocarModo('local')" />
@@ -639,17 +645,17 @@
           <div class="cfg-radio-content">
             <span class="cfg-radio-icon">☁️</span>
             <div>
-              <strong>Oracle Cloud (servidor)</strong>
+              <strong>Google Cloud (servidor)</strong>
               <span>WhatsApp roda no servidor 24/7. Funciona no iPhone e em qualquer lugar.</span>
             </div>
           </div>
         </label>
 
         <div id="cfg-url-row" style="display:none; flex-direction:column; gap:8px; margin-top:16px;">
-          <label class="cfg-input-label">URL do servidor Oracle Cloud</label>
+          <label class="cfg-input-label">URL do servidor Google Cloud</label>
           <input id="cfg-server-url" type="url" class="cfg-input"
-            placeholder="https://129.80.10.5:3000 ou https://meudominio.com" />
-          <span class="cfg-input-hint">💡 IP ou domínio do seu servidor Oracle com a porta 3000</span>
+            placeholder="http://34.121.96.26:3000" />
+          <span class="cfg-input-hint">💡 IP externo do seu servidor com a porta 3000</span>
         </div>
 
         <button class="btn-primary" style="margin-top:24px; width:100%;" onclick="salvarConfiguracaoServidor()">

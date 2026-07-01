@@ -134,7 +134,19 @@ async function iniciarWhatsApp() {
         "--no-first-run",
         "--no-zygote",
         "--disable-extensions",
-        "--disable-background-networking"
+        "--disable-background-networking",
+        // Flags para economizar memória (essencial em servidores com pouca RAM)
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--disable-translate",
+        "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+        "--disable-ipc-flooding-protection",
+        "--memory-pressure-off",
+        "--single-process",            // reduz uso de RAM significativamente
+        "--renderer-process-limit=1",
+        "--max_old_space_size=256"
       ]
     };
 
