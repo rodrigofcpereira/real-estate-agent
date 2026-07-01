@@ -68,6 +68,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Propriedades
       </a>
+      <a href="#" class="nav-item" id="nav-configuracoes" onclick="irPara('configuracoes'); return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Configurações
+      </a>
 
       <div class="sidebar-divider"></div>
 
@@ -604,6 +608,71 @@
   </div>
 
   </div><!-- /app-container -->
+
+  <!-- ===== PAGE: CONFIGURAÇÕES ===== -->
+  <div id="page-configuracoes" class="page" style="display:none;">
+    <div class="topbar">
+      <h1 class="topbar-title">⚙️ Configurações</h1>
+    </div>
+    <div class="page-body" style="padding:32px; max-width:600px;">
+
+      <!-- Badge modo atual -->
+      <div id="cfg-mode-badge" class="cfg-badge cfg-badge-local">💻 Local (este computador)</div>
+
+      <div class="cfg-card">
+        <h3 class="cfg-card-title">🖥️ Modo de Servidor WhatsApp</h3>
+        <p class="cfg-card-desc">Escolha onde o WhatsApp vai rodar. No modo Local funciona apenas neste computador. No modo Oracle Cloud funciona em qualquer dispositivo, inclusive iPhone.</p>
+
+        <label class="cfg-radio-label">
+          <input type="radio" name="cfg-mode" id="cfg-mode-local" value="local" onchange="cfgTrocarModo('local')" />
+          <div class="cfg-radio-content">
+            <span class="cfg-radio-icon">💻</span>
+            <div>
+              <strong>Local (padrão)</strong>
+              <span>WhatsApp roda neste computador. Não precisa de internet extra.</span>
+            </div>
+          </div>
+        </label>
+
+        <label class="cfg-radio-label">
+          <input type="radio" name="cfg-mode" id="cfg-mode-cloud" value="cloud" onchange="cfgTrocarModo('cloud')" />
+          <div class="cfg-radio-content">
+            <span class="cfg-radio-icon">☁️</span>
+            <div>
+              <strong>Oracle Cloud (servidor)</strong>
+              <span>WhatsApp roda no servidor 24/7. Funciona no iPhone e em qualquer lugar.</span>
+            </div>
+          </div>
+        </label>
+
+        <div id="cfg-url-row" style="display:none; flex-direction:column; gap:8px; margin-top:16px;">
+          <label class="cfg-input-label">URL do servidor Oracle Cloud</label>
+          <input id="cfg-server-url" type="url" class="cfg-input"
+            placeholder="https://129.80.10.5:3000 ou https://meudominio.com" />
+          <span class="cfg-input-hint">💡 IP ou domínio do seu servidor Oracle com a porta 3000</span>
+        </div>
+
+        <button class="btn-primary" style="margin-top:24px; width:100%;" onclick="salvarConfiguracaoServidor()">
+          💾 Salvar e Reconectar
+        </button>
+      </div>
+
+      <div class="cfg-card" style="margin-top:20px;">
+        <h3 class="cfg-card-title">📋 Como configurar a Oracle Cloud</h3>
+        <ol class="cfg-steps">
+          <li>Acesse <strong>cloud.oracle.com</strong> e crie uma conta gratuita</li>
+          <li>Crie uma VM: <em>Compute → Instances → Create</em> (shape <strong>VM.Standard.A1.Flex</strong>, 4 CPU, 24GB RAM — gratuito)</li>
+          <li>No terminal do servidor, rode o script de instalação:</li>
+        </ol>
+        <pre class="cfg-code">curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/main/setup-oracle.sh | bash</pre>
+        <ol class="cfg-steps" start="4">
+          <li>Anote o IP público do servidor (ex: <code>129.80.10.5</code>)</li>
+          <li>Volte aqui, selecione <strong>Oracle Cloud</strong> e cole a URL: <code>https://129.80.10.5:3000</code></li>
+        </ol>
+      </div>
+
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="firebase.js"></script>

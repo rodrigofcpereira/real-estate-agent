@@ -4,7 +4,17 @@
 // =============================================
 
 // ---- Servidor backend ----
-const API_BASE = window.location.origin;
+// Modo "local": usa o servidor embutido no Electron (padrão)
+// Modo "cloud": usa o servidor Oracle Cloud configurado nas Configurações
+function getAPIBase() {
+  const mode = localStorage.getItem('tc_server_mode') || 'local';
+  if (mode === 'cloud') {
+    const url = (localStorage.getItem('tc_server_url') || '').trim().replace(/\/$/, '');
+    if (url) return url;
+  }
+  return window.location.origin;
+}
+let API_BASE = getAPIBase();
 
 // ---- Estado WhatsApp ----
 let waStatus = "desconectado";
@@ -909,13 +919,14 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
 //  NAVEGAÇÃO ENTRE PÁGINAS
 // ==============================================
 function irPara(pagina) {
-  ['dashboard', 'propriedades'].forEach(p => {
+  ['dashboard', 'propriedades', 'configuracoes'].forEach(p => {
     const el  = document.getElementById('page-' + p);
     const nav = document.getElementById('nav-' + p);
     if (el)  el.style.display = (p === pagina) ? 'flex' : 'none';
     if (nav) nav.classList.toggle('active', p === pagina);
   });
   if (pagina === 'propriedades') renderizarPropriedades();
+  if (pagina === 'configuracoes') carregarTelaConfiguracoes();
 }
 
 // ==============================================
@@ -1392,4 +1403,58 @@ async function dispararPropriedade() {
       `${selecionados.length} cliente(s) selecionado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
       links);
   }
+}
+
+// ==============================================
+//  CONFIGURAÇÕES – Modo de Servidor
+// ==============================================
+
+function carregarTelaConfiguracoes() {
+  const mode = localStorage.getItem('tc_server_mode') || 'local';
+  const url  = localStorage.getItem('tc_server_url')  || '';
+
+  const radioLocal = document.getElementById('cfg-mode-local');
+  const radioCloud = document.getElementById('cfg-mode-cloud');
+  const urlInput   = document.getElementById('cfg-server-url');
+  const urlRow     = document.getElementById('cfg-url-row');
+  const badge      = document.getElementById('cfg-mode-badge');
+
+  if (radioLocal) radioLocal.checked = (mode === 'local');
+  if (radioCloud) radioCloud.checked = (mode === 'cloud');
+  if (urlInput)   urlInput.value     = url;
+  if (urlRow)     urlRow.style.display = (mode === 'cloud') ? 'flex' : 'none';
+  if (badge) {
+    badge.textContent = (mode === 'cloud' && url) ? `☁️ Oracle Cloud: ${url}` : '💻 Local (este computador)';
+    badge.className   = 'cfg-badge ' + (mode === 'cloud' ? 'cfg-badge-cloud' : 'cfg-badge-local');
+  }
+}
+
+function cfgTrocarModo(modo) {
+  const urlRow = document.getElementById('cfg-url-row');
+  if (urlRow) urlRow.style.display = (modo === 'cloud') ? 'flex' : 'none';
+}
+
+function salvarConfiguracaoServidor() {
+  const mode   = document.querySelector('input[name="cfg-mode"]:checked')?.value || 'local';
+  const urlRaw = (document.getElementById('cfg-server-url')?.value || '').trim().replace(/\/$/, '');
+
+  if (mode === 'cloud' && !urlRaw) {
+    alert('⚠️ Informe a URL do servidor Oracle Cloud.\nEx: https://129.80.10.5:3000');
+    return;
+  }
+
+  localStorage.setItem('tc_server_mode', mode);
+  if (mode === 'cloud') localStorage.setItem('tc_server_url', urlRaw);
+
+  // Reconecta com o novo API_BASE
+  API_BASE = getAPIBase();
+  if (socket) { socket.disconnect(); socket = null; }
+  iniciarSocket();
+
+  carregarTelaConfiguracoes();
+
+  const msg = mode === 'cloud'
+    ? `✅ Conectando ao servidor Oracle Cloud:\n${urlRaw}`
+    : '✅ Usando servidor local (este computador).';
+  alert(msg);
 }

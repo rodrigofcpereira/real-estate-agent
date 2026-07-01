@@ -2043,3 +2043,97 @@ tbody tr:hover .row-actions { opacity: 1; }
   padding: 14px 16px;
 }
 
+/* ==============================================
+   CONFIGURAÇÕES
+   ============================================== */
+.cfg-badge {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: .85rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+.cfg-badge-local { background: #e0f2fe; color: #0369a1; }
+.cfg-badge-cloud { background: #ede9fe; color: #6d28d9; }
+
+.cfg-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+.cfg-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.cfg-card-desc {
+  font-size: .875rem;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.cfg-radio-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cfg-radio-label:has(input:checked) {
+  border-color: var(--primary);
+  background: #f5f3ff;
+}
+.cfg-radio-label input[type="radio"] { margin-top: 3px; accent-color: var(--primary); }
+.cfg-radio-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.cfg-radio-icon { font-size: 1.4rem; line-height: 1; }
+.cfg-radio-content div { display: flex; flex-direction: column; gap: 2px; }
+.cfg-radio-content strong { font-size: .9rem; color: var(--text); }
+.cfg-radio-content span { font-size: .8rem; color: var(--text-muted); }
+
+.cfg-input-label { font-size: .85rem; font-weight: 600; color: var(--text); }
+.cfg-input {
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: .9rem;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.cfg-input:focus { border-color: var(--primary); }
+.cfg-input-hint { font-size: .78rem; color: var(--text-muted); }
+
+.cfg-steps {
+  font-size: .875rem;
+  color: var(--text);
+  line-height: 1.8;
+  padding-left: 20px;
+  margin: 12px 0;
+}
+.cfg-steps li { margin-bottom: 4px; }
+.cfg-code {
+  background: #1e293b;
+  color: #7dd3fc;
+  font-family: 'Courier New', monospace;
+  font-size: .8rem;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
