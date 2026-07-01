@@ -56,5 +56,19 @@ module.exports = async function afterPack(context) {
   execSync(`plutil -replace CFBundleDisplayName -string ${JSON.stringify(productName)} ${JSON.stringify(mainPlist)}`);
   execSync(`plutil -replace CFBundleName -string "Electron" ${JSON.stringify(mainPlist)}`);
 
-  console.log('[afterPack] Done. Framework replaced, app.asar restored.');
+  // 6. Re-sign the entire app bundle to fix "damaged" error on macOS
+  //    Tries Development certificate first (trusted on dev machine),
+  //    falls back to ad-hoc if unavailable.
+  const cert = 'Apple Development: Rodrigo Felippo (N944BST58L)';
+  let signOpts = `--force --deep --sign ${JSON.stringify(cert)} --preserve-metadata=identifier,flags`;
+  try {
+    execSync(`security find-identity -p codesigning -v | grep -q ${JSON.stringify(cert)}`);
+  } catch (_) {
+    console.log('[afterPack] Development cert not found, using ad-hoc signing');
+    signOpts = `--force --deep --sign - --preserve-metadata=identifier,flags`;
+  }
+  console.log('[afterPack] Re-signing app bundle...');
+  execSync(`codesign ${signOpts} ${JSON.stringify(builtApp)}`, { stdio: 'inherit' });
+
+  console.log('[afterPack] Done. Framework replaced, app.asar restored, app re-signed.');
 };

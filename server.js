@@ -8,8 +8,22 @@ const http       = require("http");
 const { Server } = require("socket.io");
 const cors       = require("cors");
 const path       = require("path");
+const fs         = require("fs");
 const qrcode     = require("qrcode");
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
+
+// ---- Log em arquivo para debug em produção ----
+const LOG_FILE = path.join(
+  process.env.WA_SESSION_PATH
+    ? path.dirname(process.env.WA_SESSION_PATH)
+    : __dirname,
+  "wa_debug.log"
+);
+function logFile(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  process.stdout.write(line);
+  try { fs.appendFileSync(LOG_FILE, line); } catch(_) {}
+}
 
 const app    = express();
 const server = http.createServer(app);
@@ -30,6 +44,57 @@ app.use(express.static(path.join(__dirname)));
 let whatsappStatus = "desconectado"; // desconectado | qr | autenticado | pronto | erro
 let clienteWA      = null;
 let iniciando      = false; // trava para evitar chamadas simultâneas
+let _tentativasReconexao = 0; // contador de retentativas automáticas
+
+// ---- Versão do WhatsApp Web: usa o cache local mais recente ----
+function resolverWebVersion() {
+  const cachePath = path.join(__dirname, ".wwebjs_cache");
+  try {
+    if (fs.existsSync(cachePath)) {
+      const arquivos = fs.readdirSync(cachePath)
+        .filter(f => f.endsWith(".html"))
+        .sort(); // ordenação lexicográfica – a última é a mais recente
+      if (arquivos.length > 0) {
+        const versao = arquivos[arquivos.length - 1].replace(".html", "");
+        logFile(`📦 Usando webVersion do cache local: ${versao}`);
+        return versao;
+      }
+    }
+  } catch (_) {}
+  // fallback para uma versão recente conhecida
+  logFile("📦 Cache não encontrado – usando webVersion fallback: 2.3000.1042462245");
+  return "2.3000.1042462245";
+}
+
+// ---- Limpar arquivos de lock do Chrome (evita trava entre execuções) ----
+function limparLockChrome() {
+  const sessionBase = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
+  const lockFiles   = ["SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort"];
+
+  function removerLocks(dir) {
+    if (!fs.existsSync(dir)) return;
+    lockFiles.forEach(nome => {
+      const p = path.join(dir, nome);
+      try {
+        if (fs.existsSync(p) || fs.lstatSync(p)) {
+          fs.unlinkSync(p);
+          logFile(`🗑️  Lock removido: ${p}`);
+        }
+      } catch (_) {}
+    });
+    // percorre subdiretórios (ex: session/, session-0/, …)
+    try {
+      fs.readdirSync(dir).forEach(sub => {
+        const subPath = path.join(dir, sub);
+        try {
+          if (fs.lstatSync(subPath).isDirectory()) removerLocks(subPath);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  removerLocks(sessionBase);
+}
 
 // ---- Destruir cliente atual e aguardar o browser fechar ----
 async function destruirCliente() {
@@ -38,8 +103,9 @@ async function destruirCliente() {
   clienteWA  = null;
   if (alvo._readyTimeout) { clearTimeout(alvo._readyTimeout); alvo._readyTimeout = null; }
   try { await alvo.destroy(); } catch(e) { /* ignora erros de destruição */ }
-  // Aguarda um tick para o Puppeteer liberar o lock do userDataDir
-  await new Promise(r => setTimeout(r, 800));
+  // Aguarda o Puppeteer liberar o lock do userDataDir
+  await new Promise(r => setTimeout(r, 1200));
+  limparLockChrome(); // remove locks stale após o browser fechar
 }
 
 // ---- Inicializar cliente WhatsApp ----
@@ -53,6 +119,9 @@ async function iniciarWhatsApp() {
   try {
     await destruirCliente();
 
+    // Remove locks stale ANTES de abrir o Chrome (evita travamento na primeira execução)
+    limparLockChrome();
+
     whatsappStatus = "conectando";
     io.emit("wa:status", { status: "conectando" });
 
@@ -62,25 +131,31 @@ async function iniciarWhatsApp() {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
         "--no-first-run",
         "--no-zygote",
-        "--single-process",
-        "--disable-gpu"
+        "--disable-extensions",
+        "--disable-background-networking"
       ]
     };
 
     if (process.env.CHROMIUM_PATH) {
       puppeteerOpts.executablePath = process.env.CHROMIUM_PATH;
+    } else {
+      try {
+        puppeteerOpts.executablePath = require('puppeteer').executablePath();
+      } catch (_) {}
     }
 
     clienteWA = new Client({
       authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || "./.wwebjs_auth" }),
-      puppeteer: puppeteerOpts
+      puppeteer: puppeteerOpts,
+      webVersionCache: { type: "none" },  // sempre baixa a versão atual do WhatsApp Web
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     });
 
     clienteWA.on("qr", async (qr) => {
       console.log("📱 QR Code gerado – escaneie com o WhatsApp!");
+      _tentativasReconexao = 0; // QR gerado = nova sessão, zera contador
       whatsappStatus = "qr";
       try {
         const qrDataURL = await qrcode.toDataURL(qr, { width: 280, margin: 2 });
@@ -100,19 +175,40 @@ async function iniciarWhatsApp() {
       whatsappStatus = "autenticado";
       io.emit("wa:status", { status: "autenticado", message: "Sessão autenticada, carregando WhatsApp..." });
 
-      // Se "ready" não disparar em 90s, a sessão está corrompida
+      // Se "ready" não disparar em 45s, tenta reconectar automaticamente (1 vez)
       clienteWA._readyTimeout = setTimeout(async () => {
-        if (whatsappStatus === "autenticado") {
-          console.error("⏱️ Timeout: 'ready' não disparou em 90s. Sessão pode estar corrompida.");
-          whatsappStatus = "erro";
-          io.emit("wa:status", { status: "erro", message: "Sessão corrompida. Clique em 'Limpar Sessão' e reconecte." });
+        if (whatsappStatus !== "autenticado") return;
+
+        if (_tentativasReconexao < 1) {
+          _tentativasReconexao++;
+          logFile(`⏱️ Timeout: 'ready' não disparou em 45s. Reconectando automaticamente (tentativa ${_tentativasReconexao})...`);
+          io.emit("wa:status", { status: "conectando", message: "Reconectando automaticamente..." });
           await destruirCliente();
+          iniciando = false;
+          await iniciarWhatsApp();
+        } else {
+          // Segunda falha: sessão provavelmente expirada → limpa e pede novo QR
+          _tentativasReconexao = 0;
+          logFile("⏱️ Sessão expirada – limpando e aguardando novo QR Code...");
+          io.emit("wa:status", { status: "conectando", message: "Sessão expirada. Limpando e gerando novo QR Code..." });
+          await destruirCliente();
+
+          // Apaga dados de sessão para forçar novo QR
+          const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
+          if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            logFile("🗑️  Sessão expirada apagada automaticamente.");
+          }
+
+          iniciando = false;
+          await iniciarWhatsApp(); // vai gerar QR Code pois não há sessão
         }
-      }, 90000);
+      }, 45000);
     });
 
     clienteWA.on("ready", () => {
       console.log("🟢 WhatsApp pronto para enviar mensagens!");
+      _tentativasReconexao = 0;
       if (clienteWA && clienteWA._readyTimeout) {
         clearTimeout(clienteWA._readyTimeout);
         clienteWA._readyTimeout = null;
@@ -123,6 +219,7 @@ async function iniciarWhatsApp() {
 
     clienteWA.on("auth_failure", async (msg) => {
       console.error("❌ Falha na autenticação:", msg);
+      _tentativasReconexao = 0;
       whatsappStatus = "erro";
       io.emit("wa:status", { status: "erro", message: "Falha na autenticação. Tente novamente." });
       await destruirCliente();
@@ -138,7 +235,9 @@ async function iniciarWhatsApp() {
     await clienteWA.initialize();
 
   } catch (err) {
-    console.error("❌ Erro ao iniciar WhatsApp:", err.message);
+    logFile(`❌ Erro ao iniciar WhatsApp: ${err.message}`);
+    logFile(`   STACK: ${err.stack}`);
+    logFile(`   CHROMIUM_PATH: ${process.env.CHROMIUM_PATH || "(não definido)"}`);
     whatsappStatus = "erro";
     io.emit("wa:status", { status: "erro", message: "Erro ao iniciar. Tente novamente." });
     await destruirCliente();
@@ -307,11 +406,10 @@ app.post("/api/limpar-sessao", async (req, res) => {
   }
   await destruirCliente();
   iniciando = false; // libera a trava caso tenha ficado presa
+  _tentativasReconexao = 0;
 
   // Apaga os dados de sessão do LocalAuth
-  const fs    = require("fs");
-  const path2 = require("path");
-  const sessionPath = process.env.WA_SESSION_PATH || path2.join(__dirname, ".wwebjs_auth");
+  const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
   if (fs.existsSync(sessionPath)) {
     fs.rmSync(sessionPath, { recursive: true, force: true });
     console.log("🗑️  Sessão apagada com sucesso.");
@@ -326,9 +424,17 @@ app.get("/api/status", (req, res) => {
   res.json({ status: whatsappStatus });
 });
 
+// ---- API: Iniciar WhatsApp (para testes via HTTP) ----
+app.post("/api/iniciar", (req, res) => {
+  logFile("▶️ /api/iniciar chamado via HTTP");
+  iniciarWhatsApp();
+  res.json({ ok: true, message: "Iniciando..." });
+});
+
 // ---- Iniciar servidor ----
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+  limparLockChrome(); // garante que não há locks stale da execução anterior
   console.log(`\n🚀 Servidor LF Imóveis rodando em http://localhost:${PORT}`);
   console.log("📋 Abra o navegador e use o painel normalmente.");
   console.log("📱 Clique em 'Conectar WhatsApp' para escanear o QR Code.\n");

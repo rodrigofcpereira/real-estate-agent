@@ -1,7 +1,12 @@
 node_modules/
 .wwebjs_auth/
+.wwebjs_auth_test/
 .wwebjs_cache/
 .env
 .DS_Store
 resources/chromium
 dist/
+.firebase/
+.idea/
+*.log
+*.bak
