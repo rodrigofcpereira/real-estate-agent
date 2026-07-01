@@ -69,23 +69,23 @@ if [ "$SKIP_BUILD" = false ]; then
   if [ "$BUILD_MAC" = true ]; then
     section "Build macOS (.dmg)"
     npm run dist:mac
-    DMG_FILE=$(find "$DIST_DIR" -name "*.dmg" | head -1)
-    [ -f "$DMG_FILE" ] || err "DMG não encontrado em $DIST_DIR"
+    DMG_FILE=$(find "$DIST_DIR" -name "Tech Corretor.dmg" | head -1)
+    [ -f "$DMG_FILE" ] || err "Tech Corretor.dmg não encontrado em $DIST_DIR"
     ok "DMG gerado: $DMG_FILE"
   fi
 
   if [ "$BUILD_WIN" = true ]; then
     section "Build Windows (.exe)"
     npm run dist:win
-    EXE_FILE=$(find "$DIST_DIR" -name "*Setup*.exe" | head -1)
-    [ -f "$EXE_FILE" ] || err "EXE não encontrado em $DIST_DIR"
+    EXE_FILE=$(find "$DIST_DIR" -maxdepth 1 -name "Tech Corretor.exe" | head -1)
+    [ -f "$EXE_FILE" ] || err "Tech Corretor.exe não encontrado em $DIST_DIR"
     ok "EXE gerado: $EXE_FILE"
   fi
 
 else
   warn "Build ignorado (--skip-build)"
-  DMG_FILE=$(find "$DIST_DIR" -name "*.dmg" 2>/dev/null | head -1)
-  EXE_FILE=$(find "$DIST_DIR" -name "*Setup*.exe" 2>/dev/null | head -1)
+  DMG_FILE=$(find "$DIST_DIR" -name "Tech Corretor.dmg" 2>/dev/null | head -1)
+  EXE_FILE=$(find "$DIST_DIR" -maxdepth 1 -name "Tech Corretor.exe" 2>/dev/null | head -1)
 fi
 
 # ── Upload Firebase Storage ──────────────────────────────────
