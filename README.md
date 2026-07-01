@@ -1,60 +1,130 @@
 # Tech Corretor
 
-Aplicativo web de gestão de contratos imobiliários.
+Painel de gestão de contratos imobiliários com envio de mensagens via WhatsApp.
 
-## Como usar
+---
 
-1. Abra o arquivo `index.html` diretamente no navegador **ou** use a extensão *Live Server* no VS Code.
+## Stack
 
-## Funcionalidades
-
-| Função | Descrição |
+| Camada | Tecnologia |
 |---|---|
-| **Pesquisar** | Filtra a tabela por qualquer campo em tempo real |
-| **Atualizar dados** | Recarrega os dados (planilha ou exemplo) |
-| **Aniversáriante** | Envia mensagem de parabéns via WhatsApp |
-| **Contratos vencidos** | Envia aviso de renovação via WhatsApp |
-| **Ano novo** | Envia saudação de ano novo para todos |
-| **Filtrar por contratos vencidos** | Exibe somente contratos expirados |
-| **Filtrar por Aniversáriante** | Exibe somente quem faz aniversário hoje |
-| **Email / WhatsApp** | Envia relatório de vencidos por e-mail ou WhatsApp |
+| Desktop | Electron ~40 |
+| Backend | Node.js 20 + Express + Socket.io |
+| WhatsApp | whatsapp-web.js + Puppeteer |
+| Banco de dados | Firebase Firestore |
+| Auth | Firebase Auth |
+| Hosting (site) | Firebase Hosting — `tech-corretor.web.app` |
+| VPS (WhatsApp 24/7) | Google Cloud e2-micro — `34.121.96.26:3000` |
 
-## Conectar à sua planilha Google Sheets
+---
 
-1. Abra sua planilha no Google Sheets.
-2. **Arquivo → Compartilhar → Publicar na web** → selecione a aba → formato **CSV** → clique em *Publicar*.
-3. Copie a URL gerada.
-4. Em `app.js`, altere:
-   ```js
-   const USE_SHEETS = true;
-   const SHEETS_CSV_URL = "COLE_A_URL_AQUI";
-   ```
-5. A planilha deve ter exatamente esta ordem de colunas:
-   ```
-   nome | telefone | apartamento | nascimento | inicioContrato | terminoContrato | condominio
-   ```
+## Rodar localmente
+
+```bash
+npm install
+npm run dev        # inicia o servidor com nodemon
+# abrir http://localhost:3000 no navegador
+```
+
+---
+
+## Atualizar o servidor na VPS (Google Cloud)
+
+Sim, dá para fazer tudo via linha de comando do seu Mac.
+
+### Opção 1 — SSH direto pelo terminal
+
+```bash
+# 1. Conectar na VPS
+ssh usuario@34.121.96.26
+
+# 2. Dentro da VPS: puxar código novo e reiniciar
+cd ~/tech-corretor
+git pull origin main
+sudo systemctl restart tech-corretor
+
+# 3. Ver os logs ao vivo para confirmar que subiu
+sudo journalctl -u tech-corretor -f
+# Pressione Ctrl+C para sair dos logs
+```
+
+### Opção 2 — Tudo em uma linha (sem entrar no SSH)
+
+```bash
+ssh usuario@34.121.96.26 "cd ~/tech-corretor && git pull origin main && sudo systemctl restart tech-corretor && sudo journalctl -u tech-corretor -n 20"
+```
+
+> **Dica:** Substitua `usuario` pelo nome de usuário da sua VM (normalmente o mesmo da conta Google, ex: `rodrigo`).
+> Para não precisar digitar senha toda vez, configure a chave SSH:
+> ```bash
+> ssh-copy-id usuario@34.121.96.26
+> ```
+
+### Ver status do serviço
+
+```bash
+ssh usuario@34.121.96.26 "sudo systemctl status tech-corretor"
+```
+
+### Reiniciar sem puxar código novo
+
+```bash
+ssh usuario@34.121.96.26 "sudo systemctl restart tech-corretor"
+```
+
+### Ver logs em tempo real
+
+```bash
+ssh usuario@34.121.96.26 "sudo journalctl -u tech-corretor -f"
+```
+
+---
+
+## Deploy do site + builds (do Mac)
+
+```bash
+# Build macOS (DMG) + sobe tudo
+./deploy.sh --mac
+
+# Build Windows (EXE) + sobe tudo
+./deploy.sh --win
+
+# Só atualiza o site Firebase sem rebuild
+./deploy.sh --site
+
+# Pula o build, usa os arquivos existentes em dist/
+./deploy.sh --skip-build
+```
+
+---
 
 ## Estrutura do projeto
 
 ```
 corretor/
-├── index.html   ← estrutura da página
-├── style.css    ← estilos visuais
-├── app.js       ← lógica e dados
-└── README.md
+├── app.html          ← UI do painel (Electron + browser)
+├── app.js            ← lógica frontend
+├── auth.js           ← autenticação Firebase
+├── firebase.js       ← configuração Firebase
+├── server.js         ← backend Express + WhatsApp
+├── main.js           ← processo principal Electron
+├── style.css         ← estilos
+├── package.json
+├── deploy.sh         ← script de build e deploy
+├── setup-gcloud.sh   ← instalação completa na VPS
+├── setup-https.sh    ← configurar HTTPS + DuckDNS na VPS
+└── public/
+    ├── index.html    ← landing page (Firebase Hosting)
+    └── download.html ← página de download DMG/EXE
 ```
 
-# Deploy completo (gera DMG + EXE + sobe tudo)
-./deploy.sh
+---
 
-# Só macOS
-./deploy.sh --mac
+## Configurar VPS do zero
 
-# Só Windows
-./deploy.sh --win
+```bash
+# Rodar uma única vez após criar a VM no Google Cloud
+curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/main/setup-gcloud.sh | bash
+```
 
-# Só atualiza o site (sem rebuild)
-./deploy.sh --site
-
-# Pula o build, sobe os arquivos existentes em dist/
-./deploy.sh --skip-build
+Após a instalação o serviço sobe automaticamente e reinicia com a VM.
