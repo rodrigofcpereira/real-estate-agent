@@ -159,24 +159,19 @@ async function iniciarWhatsApp() {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-extensions",
-        "--disable-background-networking",
         "--disable-gpu",
         "--disable-software-rasterizer",
+        "--disable-extensions",
         "--disable-default-apps",
         "--disable-sync",
         "--disable-translate",
-        "--disable-features=TranslateUI",
+        "--disable-background-networking",
         "--disable-ipc-flooding-protection",
-        "--memory-pressure-off",
-        "--renderer-process-limit=1",
+        "--no-first-run",
         "--js-flags=--max-old-space-size=256",
         "--shm-size=256mb"
-        // REMOVIDO: --single-process → causa crash no Linux
       ],
-      timeout: 120000   // 2 minutos para carregar (VPS lento)
+      timeout: 120000
     };
 
     if (process.env.CHROMIUM_PATH) {
@@ -190,7 +185,11 @@ async function iniciarWhatsApp() {
     clienteWA = new Client({
       authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || "./.wwebjs_auth" }),
       puppeteer: puppeteerOpts,
-      webVersionCache: { type: "none" },  // sempre baixa a versão atual do WhatsApp Web
+      // 'local' = salva o WhatsApp Web no disco e reutiliza → muito mais rápido no VPS
+      // 'none'  = baixa do zero toda vez (lento)
+      webVersionCache: process.platform === "linux"
+        ? { type: "local" }    // VPS: usa cache para não baixar toda vez
+        : { type: "none" },    // Mac/Win local: sempre pega versão atual
       userAgent: process.platform === "win32"
         ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
