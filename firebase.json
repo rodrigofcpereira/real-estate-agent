@@ -1,21 +1,9 @@
 {
   "hosting": {
-    "public": ".",
+    "public": "public",
     "ignore": [
       "firebase.json",
-      "**/.*",
-      "**/node_modules/**",
-      "server.js",
-      "main.js",
-      "package.json",
-      "package-lock.json",
-      "Dockerfile",
-      "fly.toml",
-      ".dockerignore",
-      "README.md",
-      ".wwebjs_auth/**",
-      ".wwebjs_cache/**",
-      "dist/**"
+      "**/.*"
     ],
     "rewrites": [
       {
