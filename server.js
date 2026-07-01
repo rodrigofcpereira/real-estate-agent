@@ -12,6 +12,25 @@ const fs         = require("fs");
 const qrcode     = require("qrcode");
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 
+// ---- Evita que erros do Puppeteer/Chrome derrubem o processo ----
+process.on("uncaughtException", (err) => {
+  const ignore = ["TargetCloseError", "ProtocolError", "Target closed", "Session closed"];
+  if (ignore.some(e => err?.message?.includes(e) || err?.name?.includes(e))) {
+    logFile(`⚠️  Erro ignorado (Chrome fechou): ${err.message}`);
+    return;
+  }
+  logFile(`💥 Erro não tratado: ${err.stack || err.message}`);
+});
+process.on("unhandledRejection", (reason) => {
+  const msg = reason?.message || String(reason);
+  const ignore = ["TargetCloseError", "ProtocolError", "Target closed", "Session closed"];
+  if (ignore.some(e => msg.includes(e))) {
+    logFile(`⚠️  Rejeição ignorada (Chrome fechou): ${msg}`);
+    return;
+  }
+  logFile(`💥 Rejeição não tratada: ${msg}`);
+});
+
 // ---- Log em arquivo para debug em produção ----
 const LOG_FILE = path.join(
   process.env.WA_SESSION_PATH
@@ -199,15 +218,19 @@ async function iniciarWhatsApp() {
       whatsappStatus = "autenticado";
       io.emit("wa:status", { status: "autenticado", message: "Sessão autenticada, carregando WhatsApp..." });
 
-      // Se "ready" não disparar em 45s, tenta reconectar automaticamente (1 vez)
+      // VPS lento precisa de mais tempo — usa 120s em produção, 45s local
+      const isCloud = !process.env.ELECTRON_RUN_AS_NODE && process.platform === "linux";
+      const readyTimeoutMs = isCloud ? 120000 : 45000;
+
+      // Se "ready" não disparar no tempo limite, tenta reconectar automaticamente (1 vez)
       clienteWA._readyTimeout = setTimeout(async () => {
         if (whatsappStatus !== "autenticado") return;
 
         if (_tentativasReconexao < 1) {
           _tentativasReconexao++;
-          logFile(`⏱️ Timeout: 'ready' não disparou em 45s. Reconectando automaticamente (tentativa ${_tentativasReconexao})...`);
+          logFile(`⏱️ Timeout: 'ready' não disparou em ${readyTimeoutMs/1000}s. Reconectando automaticamente (tentativa ${_tentativasReconexao})...`);
           io.emit("wa:status", { status: "conectando", message: "Reconectando automaticamente..." });
-          await destruirCliente();
+          try { await destruirCliente(); } catch(_) {}
           iniciando = false;
           await iniciarWhatsApp();
         } else {
@@ -215,7 +238,7 @@ async function iniciarWhatsApp() {
           _tentativasReconexao = 0;
           logFile("⏱️ Sessão expirada – limpando e aguardando novo QR Code...");
           io.emit("wa:status", { status: "conectando", message: "Sessão expirada. Limpando e gerando novo QR Code..." });
-          await destruirCliente();
+          try { await destruirCliente(); } catch(_) {}
 
           // Apaga dados de sessão para forçar novo QR
           const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
@@ -227,7 +250,7 @@ async function iniciarWhatsApp() {
           iniciando = false;
           await iniciarWhatsApp(); // vai gerar QR Code pois não há sessão
         }
-      }, 45000);
+      }, readyTimeoutMs);
     });
 
     clienteWA.on("ready", () => {
