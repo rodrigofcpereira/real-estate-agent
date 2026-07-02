@@ -269,7 +269,7 @@ function aplicarFiltros(termoBusca) {
   }
 
   if (termo) {
-    base = base.filter(r => Object.values(r).some(v => v.toLowerCase().includes(termo)));
+    base = base.filter(r => Object.values(r).some(v => typeof v === 'string' && v.toLowerCase().includes(termo)));
   }
 
   dadosFiltrados = base;
@@ -1039,7 +1039,7 @@ function renderizarPropriedades() {
     if (p.quartos)   detalhes.push(`<span class="prop-detail-item">🛏️ ${p.quartos}</span>`);
     if (p.banheiros) detalhes.push(`<span class="prop-detail-item">🚿 ${p.banheiros}</span>`);
     if (p.vagas)     detalhes.push(`<span class="prop-detail-item">🚗 ${p.vagas}</span>`);
-    if (p.area)      detalhes.push(`<span class="prop-detail-item">📐 ${p.area}</span>`);
+    if (p.area)      detalhes.push(`<span class="prop-detail-item">📐 ${p.area} m²</span>`);
 
     const endereco = [p.endereco, p.bairro, p.cidade].filter(Boolean).join(', ');
 
@@ -1053,7 +1053,7 @@ function renderizarPropriedades() {
           ${detalhes.length ? `<div class="prop-details">${detalhes.join('')}</div>` : ''}
           ${p.descricao ? `<p class="prop-desc">${p.descricao}</p>` : ''}
           <div class="prop-footer">
-            <span class="prop-preco">${p.preco || '—'}</span>
+            <span class="prop-preco">${formatarPreco(p.preco)}</span>
             <div class="prop-actions">
               <button class="btn-icon btn-icon-edit" onclick="abrirFormProp(${i})" title="Editar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1098,7 +1098,7 @@ function abrirFormProp(idx = -1) {
     document.getElementById("p-endereco").value  = p.endereco  || "";
     document.getElementById("p-bairro").value    = p.bairro    || "";
     document.getElementById("p-cidade").value    = p.cidade    || "";
-    document.getElementById("p-preco").value     = p.preco     || "";
+    document.getElementById("p-preco").value     = precoParaInput(p.preco);
     document.getElementById("p-area").value      = p.area      || "";
     document.getElementById("p-quartos").value   = p.quartos   || "";
     document.getElementById("p-banheiros").value = p.banheiros || "";
@@ -1130,11 +1130,11 @@ async function salvarProp(event) {
     endereco:  document.getElementById("p-endereco").value.trim(),
     bairro:    document.getElementById("p-bairro").value.trim(),
     cidade:    document.getElementById("p-cidade").value.trim(),
-    preco:     document.getElementById("p-preco").value.trim(),
-    area:      document.getElementById("p-area").value.trim(),
-    quartos:   document.getElementById("p-quartos").value,
-    banheiros: document.getElementById("p-banheiros").value,
-    vagas:     document.getElementById("p-vagas").value,
+    preco:     limparPreco(document.getElementById("p-preco").value),
+    area:      limparDecimal(document.getElementById("p-area").value),
+    quartos:   document.getElementById("p-quartos").value || "0",
+    banheiros: document.getElementById("p-banheiros").value || "0",
+    vagas:     document.getElementById("p-vagas").value || "0",
     descricao: document.getElementById("p-desc").value.trim(),
   };
 
@@ -1296,7 +1296,7 @@ function gerarMensagemProp(prop) {
   linhas.push(`🏠 *${prop.titulo}*`);
   linhas.push('');
 
-  const info = [prop.tipo, prop.area].filter(Boolean).join(' · ');
+  const info = [prop.tipo, prop.area ? `${prop.area} m²` : ''].filter(Boolean).join(' · ');
   if (info) linhas.push(`🏷️ ${info}`);
 
   const end = [prop.endereco, prop.bairro, prop.cidade].filter(Boolean).join(', ');
@@ -1311,7 +1311,7 @@ function gerarMensagemProp(prop) {
   if (prop.descricao) { linhas.push(''); linhas.push(prop.descricao); }
 
   linhas.push('');
-  if (prop.preco) linhas.push(`💰 *${prop.preco}*`);
+  if (prop.preco) linhas.push(`💰 *${formatarPreco(prop.preco)}*`);
   linhas.push('');
   linhas.push('📞 Entre em contato com *Tech Corretor* para mais informações!');
 
@@ -1505,4 +1505,43 @@ function salvarConfiguracaoServidor() {
     ? `✅ Conectando ao servidor Oracle Cloud:\n${urlRaw}`
     : '✅ Usando servidor local (este computador).';
   alert(msg);
+}
+
+// ── Máscaras de input ────────────────────────────────────────────
+function limparPreco(v) {
+  return v.replace(/\./g, "").replace(",", ".");
+}
+function limparDecimal(v) {
+  return v.replace(",", ".");
+}
+
+function mascaraPreco(el) {
+  let v = el.value.replace(/\D/g, "");
+  if (!v) { el.value = ""; return; }
+  v = (parseInt(v) / 100).toFixed(2);
+  v = v.replace(".", ",");
+  v = v.replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1.");
+  el.value = v;
+}
+
+function mascaraDecimal(el) {
+  el.value = el.value.replace(/[^0-9,]/g, "");
+}
+
+function mascaraInteiro(el) {
+  el.value = el.value.replace(/\D/g, "");
+}
+
+function formatarPreco(v) {
+  if (!v) return '—';
+  const num = parseFloat(v);
+  if (isNaN(num)) return v;
+  return 'R$ ' + num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function precoParaInput(v) {
+  if (!v) return '';
+  const num = parseFloat(v);
+  if (isNaN(num)) return v;
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

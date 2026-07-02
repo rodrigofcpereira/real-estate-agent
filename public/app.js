@@ -258,7 +258,7 @@ function aplicarFiltros(termoBusca) {
   }
 
   if (termo) {
-    base = base.filter(r => Object.values(r).some(v => v.toLowerCase().includes(termo)));
+    base = base.filter(r => Object.values(r).some(v => typeof v === 'string' && v.toLowerCase().includes(termo)));
   }
 
   dadosFiltrados = base;

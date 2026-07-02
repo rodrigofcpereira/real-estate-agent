@@ -1683,6 +1683,9 @@ tbody tr:hover .row-actions { opacity: 1; }
   background: var(--bg);
   font-size: .82rem;
 }
+.send-progress .send-item:last-child {
+  margin-bottom: 30px;
+}
 .send-item-name  { flex: 1; color: var(--text); }
 .send-item-status { font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .send-ok      { color: #16a34a; }
@@ -2189,7 +2192,7 @@ tbody tr:hover .row-actions { opacity: 1; }
 .login-page {
   position: fixed;
   inset: 0;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);

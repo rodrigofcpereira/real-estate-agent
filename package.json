@@ -29,7 +29,7 @@
       "node_modules/**/*"
     ],
     "extraMetadata": {
-      "main": "main.js"
+      "main": "src/main.js"
     },
     "extraResources": [
       {

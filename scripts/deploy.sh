@@ -3,13 +3,16 @@
 #  deploy.sh — Tech Corretor
 #  Gera DMG (macOS) e EXE (Windows), faz upload para o
 #  Firebase Storage e publica o site via Firebase Hosting.
+#  Opcionalmente atualiza o servidor na VPS (Google Cloud).
 #
 #  Uso:
-#    ./deploy.sh              → gera tudo e faz deploy completo
+#    ./deploy.sh              → gera tudo + Firebase + VPS (deploy completo)
 #    ./deploy.sh --mac        → apenas DMG
 #    ./deploy.sh --win        → apenas EXE
-#    ./deploy.sh --site       → apenas atualiza o site (sem rebuild)
+#    ./deploy.sh --site       → apenas atualiza o site Firebase (sem rebuild)
 #    ./deploy.sh --skip-build → pula o build, sobe os arquivos existentes
+#    ./deploy.sh --no-vps     → exclui o deploy na VPS
+#    ./deploy.sh --only-vps   → somente atualiza a VPS (pula Firebase/builds)
 # ============================================================
 
 set -euo pipefail
@@ -29,7 +32,7 @@ warn()    { echo "${YELLOW}[!]${NC} $*"; }
 err()     { echo "${RED}[✗]${NC} $*"; exit 1; }
 section() { echo "\n${BOLD}${CYAN}══ $* ══${NC}"; }
 
-# ── Configuração ─────────────────────────────────────────────
+# ── Configuração Firebase / Storage ──────────────────────────
 BUCKET="gs://tech-corretor.firebasestorage.app"
 DIST_DIR="dist"
 PUBLIC_DIR="public"
@@ -38,10 +41,19 @@ EXE_NAME="Tech Corretor.exe"
 DMG_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.dmg?alt=media"
 EXE_URL="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.exe?alt=media"
 
+# ── Configuração VPS ─────────────────────────────────────────
+VPS_INSTANCE="instance-20260701-143850"
+VPS_ZONE="us-central1-b"
+VPS_IP="34.121.96.26"
+VPS_USER="hybriduzapp"
+VPS_APP_DIR="/home/hybriduzapp/tech-corretor"
+
 # ── Flags ────────────────────────────────────────────────────
 BUILD_MAC=true
 BUILD_WIN=true
 DEPLOY_SITE=true
+DEPLOY_VPS=true
+ONLY_VPS=false
 SKIP_BUILD=false
 
 for arg in "$@"; do
@@ -50,6 +62,8 @@ for arg in "$@"; do
     --win)        BUILD_MAC=false ;;
     --site)       BUILD_MAC=false; BUILD_WIN=false ;;
     --skip-build) SKIP_BUILD=true ;;
+    --no-vps)     DEPLOY_VPS=false ;;
+    --only-vps)   ONLY_VPS=true; DEPLOY_VPS=true; BUILD_MAC=false; BUILD_WIN=false; DEPLOY_SITE=false ;;
   esac
 done
 
@@ -58,12 +72,19 @@ section "Verificando pré-requisitos"
 
 command -v node    >/dev/null || err "node não encontrado"
 command -v npm     >/dev/null || err "npm não encontrado"
-command -v firebase>/dev/null || err "firebase CLI não encontrado (npm install -g firebase-tools)"
-command -v gsutil  >/dev/null || err "gsutil não encontrado (instale o Google Cloud CLI)"
+
+if [ "$ONLY_VPS" = false ]; then
+  command -v firebase >/dev/null || err "firebase CLI não encontrado (npm install -g firebase-tools)"
+  command -v gsutil   >/dev/null || err "gsutil não encontrado (instale o Google Cloud CLI)"
+fi
+
+command -v gcloud >/dev/null || err "gcloud não encontrado (instale o Google Cloud CLI)"
 
 ok "Pré-requisitos OK"
 
 # ── Build ────────────────────────────────────────────────────
+if [ "$ONLY_VPS" = false ]; then
+
 if [ "$SKIP_BUILD" = false ]; then
 
   if [ "$BUILD_MAC" = true ]; then
@@ -125,6 +146,61 @@ section "Deploy Firebase Hosting"
 
 firebase deploy --only hosting
 
+fi  # fim do bloco ONLY_VPS=false
+
+# ── Deploy VPS (Google Cloud) ────────────────────────────────
+if [ "$DEPLOY_VPS" = true ]; then
+  section "Deploy VPS — ${VPS_INSTANCE} (${VPS_ZONE})"
+  log "Conectando à instância ${VPS_INSTANCE}..."
+
+  REMOTE_SCRIPT=$(cat << 'ENDSCRIPT'
+set -e
+
+echo "📥 Puxando código novo do GitHub..."
+sudo -u hybriduzapp git -C /home/hybriduzapp/tech-corretor pull origin main
+
+echo "🔧 Patch whatsapp-web.js timeout 120s..."
+sudo perl -i -pe 's/\{ timeout: 30000 \},/{ timeout: 120000 },/g' \
+  /home/hybriduzapp/tech-corretor/node_modules/whatsapp-web.js/src/Client.js
+
+echo "� Garantindo ExecStart correto no systemd..."
+UNIT=/etc/systemd/system/tech-corretor.service
+EXPECTED="ExecStart=/usr/bin/node /home/hybriduzapp/tech-corretor/src/server.js"
+if ! grep -qF "$EXPECTED" "$UNIT"; then
+  sudo sed -i "s|ExecStart=.*|${EXPECTED}|" "$UNIT"
+  sudo systemctl daemon-reload
+  echo "   Unit file atualizado."
+else
+  echo "   Unit file já está correto."
+fi
+
+echo "�🔄 Reiniciando serviço..."
+sudo systemctl restart tech-corretor
+
+echo "⏳ Aguardando serviço subir..."
+sleep 5
+
+STATUS=$(sudo systemctl is-active tech-corretor)
+if [ "$STATUS" = "active" ]; then
+  echo "✅ Serviço está rodando!"
+else
+  echo "❌ Serviço com problema. Últimas linhas do log:"
+  sudo journalctl -u tech-corretor -n 20 --no-pager
+  exit 1
+fi
+
+echo ""
+echo "📋 Últimas linhas do log:"
+sudo journalctl -u tech-corretor -n 10 --no-pager
+ENDSCRIPT
+  )
+
+  gcloud compute ssh "${VPS_INSTANCE}" --zone="${VPS_ZONE}" --command="${REMOTE_SCRIPT}" \
+    || err "Falha ao atualizar a VPS"
+
+  ok "VPS atualizada → http://${VPS_IP}:3000"
+fi
+
 # ── Git commit (opcional) ────────────────────────────────────
 section "Commit e push git"
 
@@ -141,7 +217,12 @@ fi
 # ── Resumo ────────────────────────────────────────────────────
 section "Deploy concluído 🚀"
 echo ""
-echo "  🍎 macOS:   $DMG_URL"
-echo "  🪟 Windows: $EXE_URL"
-echo "  🌐 Site:    https://tech-corretor.web.app"
+if [ "$ONLY_VPS" = false ]; then
+  echo "  🍎 macOS:   $DMG_URL"
+  echo "  🪟 Windows: $EXE_URL"
+  echo "  🌐 Site:    https://tech-corretor.web.app"
+fi
+if [ "$DEPLOY_VPS" = true ]; then
+  echo "  🖥️  VPS:     http://${VPS_IP}:3000"
+fi
 echo ""

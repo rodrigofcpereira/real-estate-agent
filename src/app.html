@@ -43,9 +43,6 @@
         <button type="submit" class="btn btn-primary login-btn" id="login-btn">Entrar</button>
       </form>
 
-      <p class="login-toggle" id="login-toggle">
-        Não tem conta? <a href="#" onclick="toggleAuthMode();return false">Criar conta</a>
-      </p>
     </div>
   </div>
 
@@ -90,9 +87,9 @@
 
     <div class="sidebar-footer">
       <div class="user-badge">
-        <div class="user-avatar">TC</div>
+        <div class="user-avatar">LF</div>
         <div class="user-info">
-          <span class="user-name">Tech Corretor</span>
+          <span class="user-name">LF Imóveis</span>
           <span class="user-role" id="user-email">Conectando...</span>
         </div>
       </div>
@@ -490,23 +487,23 @@
         <div class="form-row">
           <div class="form-group">
             <label for="p-preco">Preço <span class="req">*</span></label>
-            <input type="text" id="p-preco" placeholder="R$ 450.000" required />
+            <input type="text" id="p-preco" placeholder="R$ 450.000" required oninput="mascaraPreco(this)" />
           </div>
           <div class="form-group">
             <label for="p-area">Área</label>
-            <input type="text" id="p-area" placeholder="95m²" />
+            <input type="text" id="p-area" placeholder="95" oninput="mascaraDecimal(this)" />
           </div>
           <div class="form-group">
             <label for="p-quartos">Quartos</label>
-            <input type="number" id="p-quartos" placeholder="0" min="0" />
+            <input type="text" id="p-quartos" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
           <div class="form-group">
             <label for="p-banheiros">Banheiros</label>
-            <input type="number" id="p-banheiros" placeholder="0" min="0" />
+            <input type="text" id="p-banheiros" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
           <div class="form-group">
             <label for="p-vagas">Vagas</label>
-            <input type="number" id="p-vagas" placeholder="0" min="0" />
+            <input type="text" id="p-vagas" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
         </div>
 

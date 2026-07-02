@@ -28,27 +28,6 @@ async function handleLogin(e) {
   }
 }
 
-async function handleSignup(e) {
-  e.preventDefault();
-  limparErroLogin();
-  const email = document.getElementById("login-email").value.trim();
-  const password = document.getElementById("login-password").value;
-  if (password.length < 6) {
-    mostrarErroLogin("A senha deve ter pelo menos 6 caracteres.");
-    return;
-  }
-  const btn = document.getElementById("login-btn");
-  btn.disabled = true;
-  btn.textContent = "Criando conta...";
-  try {
-    await auth.createUserWithEmailAndPassword(email, password);
-  } catch (err) {
-    mostrarErroLogin(tratarErroFirebase(err.code));
-    btn.disabled = false;
-    btn.textContent = "Criar conta";
-  }
-}
-
 function tratarErroFirebase(code) {
   const map = {
     "auth/user-not-found": "Usuário não encontrado.",
@@ -60,25 +39,6 @@ function tratarErroFirebase(code) {
     "auth/too-many-requests": "Muitas tentativas. Aguarde e tente novamente.",
   };
   return map[code] || "Erro ao autenticar. Tente novamente.";
-}
-
-function toggleAuthMode() {
-  const isLogin = document.getElementById("login-btn").textContent === "Entrar";
-  const toggle = document.getElementById("login-toggle");
-  const title = document.getElementById("login-title");
-  if (isLogin) {
-    title.textContent = "Criar conta";
-    document.getElementById("login-btn").textContent = "Criar conta";
-    document.getElementById("login-btn").onclick = handleSignup;
-    toggle.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode();return false">Entrar</a>';
-  } else {
-    title.textContent = "Entrar";
-    document.getElementById("login-btn").textContent = "Entrar";
-    document.getElementById("login-btn").onclick = handleLogin;
-    toggle.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode();return false">Criar conta</a>';
-  }
-  limparErroLogin();
-  document.getElementById("login-password").value = "";
 }
 
 auth.onAuthStateChanged(user => {

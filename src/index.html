@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Tech Corretor - Download</title>
+  <title>Tech Corretor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,29 +23,28 @@
       background: #1e293b;
       border-radius: 24px;
       padding: 48px 40px;
-      max-width: 560px;
+      max-width: 460px;
       width: 100%;
       text-align: center;
       border: 1px solid #334155;
       box-shadow: 0 25px 50px -12px rgba(0,0,0,.5);
     }
-    .logo { font-size: 48px; margin-bottom: 8px; }
-    h1 { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+    .logo { font-size: 52px; margin-bottom: 12px; }
+    h1 { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
     h1 span { color: #3b82f6; }
-    .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 32px; line-height: 1.5; }
+    .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 36px; line-height: 1.6; }
     .btn {
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 16px 32px;
+      justify-content: center;
+      gap: 12px;
+      padding: 16px 28px;
       border-radius: 12px;
       font-size: 16px;
       font-weight: 600;
       text-decoration: none;
       transition: all .2s;
-      cursor: pointer;
-      border: none;
-      font-family: inherit;
+      width: 100%;
     }
     .btn-primary {
       background: #3b82f6;
@@ -55,48 +54,33 @@
     .btn-outline {
       background: transparent;
       color: #e2e8f0;
-      border: 1px solid #475569;
+      border: 2px solid #475569;
     }
-    .btn-outline:hover { background: #334155; }
-    .btn svg { width: 22px; height: 22px; flex-shrink: 0; }
-    .platforms { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
-    .features {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin: 32px 0;
-      text-align: left;
+    .btn-outline:hover { background: #334155; border-color: #64748b; }
+    .btn + .btn { margin-top: 12px; }
+    .divider {
+      border: none;
+      border-top: 1px solid #334155;
+      margin: 28px 0;
+      position: relative;
     }
-    .feature {
-      background: #0f172a;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid #334155;
+    .divider-label {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      padding: 0 16px;
+      font-size: 13px;
+      color: #64748b;
     }
-    .feature-icon { font-size: 24px; margin-bottom: 6px; }
-    .feature-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-    .feature-desc { font-size: 13px; color: #94a3b8; line-height: 1.4; }
-    .steps { text-align: left; margin: 32px 0; }
-    .step { display: flex; gap: 14px; margin-bottom: 16px; align-items: flex-start; }
-    .step-num {
-      background: #3b82f6;
-      color: #fff;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-      flex-shrink: 0;
+    .footer {
+      margin-top: 28px;
+      color: #475569;
+      font-size: 12px;
     }
-    .step-text { font-size: 14px; line-height: 1.5; padding-top: 4px; }
-    .step-text strong { color: #f1f5f9; }
-    .footer { margin-top: 32px; color: #64748b; font-size: 13px; border-top: 1px solid #334155; padding-top: 24px; }
     @media (max-width: 500px) {
       .card { padding: 32px 20px; }
-      .features { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -104,59 +88,31 @@
   <div class="card">
     <div class="logo">🏢</div>
     <h1>Tech <span>Corretor</span></h1>
-    <p class="subtitle">Aplicativo desktop para gestão de clientes, propriedades e disparo de WhatsApp</p>
+    <p class="subtitle">Gestão de clientes, propriedades e<br>disparo de mensagens via WhatsApp</p>
 
-    <div class="platforms">
-      <a href="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.dmg?alt=media" class="btn btn-primary" download>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/><path d="M19 21H5"/></svg>
-        Baixar para macOS
-      </a>
-      <a href="https://firebasestorage.googleapis.com/v0/b/tech-corretor.firebasestorage.app/o/Tech%20Corretor.exe?alt=media" class="btn btn-outline" download>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/><path d="M19 21H5"/></svg>
-        Baixar para Windows
-      </a>
-    </div>
+    <a href="https://techcorretor.duckdns.org/" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+        <polyline points="10 17 15 12 10 7"/>
+        <line x1="15" y1="12" x2="3" y2="12"/>
+      </svg>
+      Acessar versão web
+    </a>
 
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">📋</div>
-        <div class="feature-title">Clientes</div>
-        <div class="feature-desc">Cadastro, controle de contratos e aniversariantes</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🏠</div>
-        <div class="feature-title">Propriedades</div>
-        <div class="feature-desc">Catálogo com fotos, carrossel e disparo</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">💬</div>
-        <div class="feature-title">WhatsApp</div>
-        <div class="feature-desc">Disparo em lote com fotos e mensagens personalizadas</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">☁️</div>
-        <div class="feature-title">Dados na nuvem</div>
-        <div class="feature-desc">Sincronizado com Firebase, acesse de qualquer lugar</div>
-      </div>
-    </div>
+    <hr class="divider" />
 
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-text"><strong>Baixe</strong> o arquivo acima (macOS ou Windows)</div>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-text"><strong>Instale</strong> abrindo o arquivo baixado e arrastando para a pasta de Aplicativos</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-text"><strong>Abra</strong> o Tech Corretor, faça login e conecte o WhatsApp escaneando o QR Code</div>
-      </div>
-    </div>
+    <p style="font-size:13px; color:#64748b; margin-bottom:16px;">Prefere instalar no computador?</p>
+
+    <a href="/download" class="btn btn-outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+        <line x1="19" y1="21" x2="5" y2="21"/>
+      </svg>
+      Baixar para desktop
+    </a>
 
     <div class="footer">
-      Tech Corretor © 2026 • Dados sincronizados via Firebase
+      Tech Corretor © 2026
     </div>
   </div>
 </body>
