@@ -41,7 +41,7 @@ let todosOsDados = [];
 let dadosFiltrados = [];
 let chipAtivo = 'todos';
 let paginaAtual = 1;
-const ITENS_POR_PAGINA = 10;
+const ITENS_POR_PAGINA = 30;
 
 // ---- Inicialização ----
 document.addEventListener("DOMContentLoaded", () => {
@@ -194,15 +194,6 @@ function renderizarTabela(dados) {
 
   const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
   const paginaDados = dados.slice(inicio, inicio + ITENS_POR_PAGINA);
-
-  // Detecta se tabela tem scroll horizontal
-  requestAnimationFrame(() => {
-    const wrapper = document.querySelector(".table-wrapper");
-    const card = document.querySelector(".table-card");
-    if (wrapper && card) {
-      card.classList.toggle("is-scrollable", wrapper.scrollWidth > wrapper.clientWidth);
-    }
-  });
 
   paginaDados.forEach(r => {
     const tr = document.createElement("tr");

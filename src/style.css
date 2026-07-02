@@ -357,45 +357,10 @@ body {
   position: relative;
 }
 
-/* Scroll fade nas laterais da tabela */
-.table-card::after {
-  content: '';
-  position: absolute;
-  top: 0; right: 0; bottom: 0;
-  width: 32px;
-  background: linear-gradient(to right, transparent, rgba(255,255,255,.85));
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .25s;
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
-  z-index: 1;
-}
-.table-card.is-scrollable::after {
-  opacity: 1;
-}
-
 .table-wrapper {
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  position: relative;
   width: 100%;
   min-width: 0;
-}
-
-.table-wrapper::-webkit-scrollbar {
-  height: 6px;
-}
-.table-wrapper::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
-}
-.table-wrapper::-webkit-scrollbar-thumb {
-  background: #c1c7cd;
-  border-radius: 3px;
-}
-.table-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #a0a7ae;
 }
 .table-title {
   font-size: .9rem;
@@ -430,6 +395,8 @@ thead th {
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 tbody tr {
@@ -446,14 +413,17 @@ tbody td {
   white-space: nowrap;
 }
 
+/* Coluna Condomínio – truncar com reticências se muito longo */
+tbody td:nth-child(7) {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Primeira coluna – nome em destaque */
 tbody td:first-child {
   font-weight: 600;
   color: var(--primary);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Status badge */
@@ -904,7 +874,7 @@ tbody tr.aniversariante td:first-child { color: #7c3aed; }
     box-shadow: var(--shadow-sm);
   }
   .table-card::after { display: none; }
-  .table-wrapper { overflow: visible; }
+  .table-wrapper { overflow-x: auto; }
 
   #tabelaImoveis { display: block; }
   #tabelaImoveis thead { display: none; }

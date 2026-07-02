@@ -720,6 +720,17 @@
     </div>
   </div>
 
+  <!-- ===== INVALID DATE OVERLAY ===== -->
+  <div id="invalid-overlay" class="expired-overlay" style="display:none;">
+    <div class="expired-card">
+      <div class="expired-icon">⚠️</div>
+      <h2>Data de Expiração Inválida</h2>
+      <p>A data de expiração configurada para esta conta não pôde ser lida.</p>
+      <p style="margin-top:8px;font-size:14px;color:#94a3b8;">Por segurança, o acesso foi bloqueado. Use o formato <strong style="color:#f8fafc;">DD/MM/AAAA</strong> no campo <code style="color:#818cf8;">expiresAt</code> ou configure um Timestamp do Firestore.</p>
+      <button class="btn-logout-expired" onclick="logout()">Sair</button>
+    </div>
+  </div>
+
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="firebase.js"></script>
   <script src="auth.js"></script>

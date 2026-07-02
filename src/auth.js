@@ -67,24 +67,78 @@ function atualizarStorageBar() {
   }
 }
 
+function mostrarOverlay(tipo) {
+  // tipo: 'expired' | 'invalid' | 'none'
+  const overlayExp = document.getElementById("expired-overlay");
+  const overlayInv = document.getElementById("invalid-overlay");
+  if (overlayExp) overlayExp.style.display = tipo === 'expired' ? "flex" : "none";
+  if (overlayInv) overlayInv.style.display = tipo === 'invalid'  ? "flex" : "none";
+}
+
 async function verificarAcesso(user) {
   try {
     const doc = await db.collection("users").doc(user.uid).get();
     if (!doc.exists) {
       document.getElementById("app-container").style.display = "none";
-      document.getElementById("expired-overlay").style.display = "flex";
+      mostrarOverlay('expired');
       return;
     }
     userData = doc.data();
-    const agora = firebase.firestore.Timestamp.now();
-    if (userData.expiresAt && userData.expiresAt.toMillis() < agora.toMillis()) {
+    const agoraMs = Date.now();
+    let expiraMs = null;
+    let dataInvalida = false;
+    const exp = userData.expiresAt;
+
+    if (exp) {
+      if (typeof exp.toMillis === 'function') {
+        expiraMs = exp.toMillis();
+      } else if (typeof exp === 'object' && exp !== null && exp.seconds) {
+        expiraMs = exp.seconds * 1000;
+      } else if (typeof exp === 'number') {
+        expiraMs = exp;
+      } else if (exp instanceof Date) {
+        expiraMs = exp.getTime();
+      } else if (typeof exp === 'string') {
+        // Suporta DD/MM/AAAA (padrão brasileiro)
+        const brMatch = exp.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (brMatch) {
+          expiraMs = new Date(
+            parseInt(brMatch[3]),
+            parseInt(brMatch[2]) - 1,
+            parseInt(brMatch[1]),
+            23, 59, 59, 999
+          ).getTime();
+        } else {
+          const parsed = new Date(exp).getTime();
+          if (isNaN(parsed)) {
+            dataInvalida = true; // string presente mas ilegível
+          } else {
+            expiraMs = parsed;
+          }
+        }
+      } else {
+        dataInvalida = true; // tipo desconhecido
+      }
+    }
+
+    // Data presente mas inválida (ilegível) → bloquear com mensagem específica
+    if (dataInvalida || (expiraMs !== null && isNaN(expiraMs))) {
       document.getElementById("app-container").style.display = "none";
-      document.getElementById("expired-overlay").style.display = "flex";
+      mostrarOverlay('invalid');
       return;
     }
+
+    // Data válida e expirada → bloquear com mensagem de expirado
+    if (expiraMs !== null && expiraMs < agoraMs) {
+      document.getElementById("app-container").style.display = "none";
+      mostrarOverlay('expired');
+      return;
+    }
+
+    // Acesso liberado
     document.getElementById("login-page").style.display = "none";
     document.getElementById("app-container").style.display = "flex";
-    document.getElementById("expired-overlay").style.display = "none";
+    mostrarOverlay('none');
     const emailEl = document.getElementById("user-email");
     if (emailEl) emailEl.textContent = user.email;
     atualizarStorageBar();
@@ -92,14 +146,19 @@ async function verificarAcesso(user) {
       authInitialized = true;
       iniciarCarregamento();
     }
-  } catch (err) {
-    console.error("Erro ao verificar acesso:", err);
-    document.getElementById("login-page").style.display = "none";
-    document.getElementById("app-container").style.display = "flex";
-    if (typeof iniciarCarregamento === "function" && !authInitialized) {
-      authInitialized = true;
-      iniciarCarregamento();
+
+    // Re-verificar próximo da expiração (max 5 min)
+    if (expiraMs !== null) {
+      const intervalo = Math.min(expiraMs - agoraMs + 1000, 5 * 60 * 1000);
+      setTimeout(() => verificarAcesso(user), intervalo);
     }
+
+  } catch (err) {
+    // Falha ao verificar → NEGAR acesso por segurança
+    console.error("Erro ao verificar acesso:", err);
+    document.getElementById("app-container").style.display = "none";
+    document.getElementById("login-page").style.display = "none";
+    mostrarOverlay('expired');
   }
 }
 
@@ -110,7 +169,7 @@ auth.onAuthStateChanged(user => {
   } else {
     document.getElementById("login-page").style.display = "flex";
     document.getElementById("app-container").style.display = "none";
-    document.getElementById("expired-overlay").style.display = "none";
+    mostrarOverlay('none');
     authInitialized = false;
     userData = null;
   }
