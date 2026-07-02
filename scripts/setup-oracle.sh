@@ -105,7 +105,7 @@ Environment=PORT=3000
 Environment=CHROMIUM_PATH=$CHROME_PATH
 Environment=WA_SESSION_PATH=$INSTALL_DIR/.wwebjs_auth
 Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ExecStart=$NODE_PATH $INSTALL_DIR/server.js
+ExecStart=$NODE_PATH $INSTALL_DIR/src/server.js
 Restart=always
 RestartSec=10
 StandardOutput=journal

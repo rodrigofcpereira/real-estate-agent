@@ -568,12 +568,18 @@
       <div class="disparo-preview">
         <div class="disparo-preview-title">✉️ Mensagem (editável)</div>
         <textarea id="disparo-mensagem" rows="7"></textarea>
-        <div class="disparo-placeholders" id="disparo-placeholders" onclick="this.classList.toggle('open')">
-          <span class="disparo-placeholders-hint">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            Placeholders disponíveis
-            <svg class="disparo-placeholders-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10"><polyline points="6 9 12 15 18 9"/></svg>
-          </span>
+        <div class="disparo-placeholders" id="disparo-placeholders">
+          <div class="disparo-placeholders-row">
+            <span class="disparo-placeholders-hint" onclick="document.getElementById('disparo-placeholders').classList.toggle('open')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              Placeholders disponíveis
+              <svg class="disparo-placeholders-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+            <button class="btn btn-primary disparo-enviar-btn" onclick="dispararPropriedade()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Enviar
+            </button>
+          </div>
           <div class="disparo-placeholders-list">
             <code>{nome}</code> <code>{apartamento}</code> <code>{condominio}</code>
             <code>{telefone}</code> <code>{nascimento}</code>
@@ -583,7 +589,10 @@
       </div>
 
       <div class="disparo-clientes-header">
-        <span>Destinatários</span>
+        <span>
+          Destinatários
+          <span class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</span>
+        </span>
         <div class="disparo-clientes-header-btns">
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(true)">Todos</button>
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(false)">Nenhum</button>
@@ -591,15 +600,8 @@
       </div>
 
       <div class="disparo-lista" id="disparo-lista"></div>
-      <p class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</p>
 
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="fecharModalDisparo()">Cancelar</button>
-        <button class="btn btn-primary" onclick="dispararPropriedade()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          Enviar via WhatsApp
-        </button>
-      </div>
+
     </div>
   </div>
 

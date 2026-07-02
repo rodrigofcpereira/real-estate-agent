@@ -117,7 +117,7 @@ fi
 section "Atualizando site de download"
 
 # Garante que o index.html do public/ está atualizado com o do projeto
-cp index.html "$PUBLIC_DIR/index.html"
+cp src/index.html "$PUBLIC_DIR/index.html"
 ok "public/index.html sincronizado"
 
 # ── Deploy Firebase Hosting ──────────────────────────────────

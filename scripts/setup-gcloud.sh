@@ -121,7 +121,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$INSTALL_DIR/.env
-ExecStart=$NODE_BIN --max-old-space-size=512 $INSTALL_DIR/server.js
+ExecStart=$NODE_BIN --max-old-space-size=512 $INSTALL_DIR/src/server.js
 Restart=always
 RestartSec=15
 StandardOutput=journal
@@ -276,7 +276,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$INSTALL_DIR/.env
-ExecStart=$NODE_BIN $INSTALL_DIR/server.js
+ExecStart=$NODE_BIN $INSTALL_DIR/src/server.js
 Restart=always
 RestartSec=10
 StandardOutput=journal

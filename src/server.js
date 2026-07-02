@@ -35,7 +35,7 @@ process.on("unhandledRejection", (reason) => {
 const LOG_FILE = path.join(
   process.env.WA_SESSION_PATH
     ? path.dirname(process.env.WA_SESSION_PATH)
-    : __dirname,
+    : path.join(__dirname, ".."),
   "wa_debug.log"
 );
 function logFile(msg) {
@@ -76,7 +76,7 @@ let _tentativasReconexao = 0; // contador de retentativas automáticas
 
 // ---- Versão do WhatsApp Web: usa o cache local mais recente ----
 function resolverWebVersion() {
-  const cachePath = path.join(__dirname, ".wwebjs_cache");
+  const cachePath = path.join(__dirname, "..", ".wwebjs_cache");
   try {
     if (fs.existsSync(cachePath)) {
       const arquivos = fs.readdirSync(cachePath)
@@ -96,7 +96,7 @@ function resolverWebVersion() {
 
 // ---- Limpar arquivos de lock do Chrome (evita trava entre execuções) ----
 function limparLockChrome() {
-  const sessionBase = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
+  const sessionBase = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
   const lockFiles   = ["SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort"];
 
   function removerLocks(dir) {
@@ -248,7 +248,7 @@ async function iniciarWhatsApp() {
           try { await destruirCliente(); } catch(_) {}
 
           // Apaga dados de sessão para forçar novo QR
-          const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
+          const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
           if (fs.existsSync(sessionPath)) {
             fs.rmSync(sessionPath, { recursive: true, force: true });
             logFile("🗑️  Sessão expirada apagada automaticamente.");
@@ -493,7 +493,7 @@ app.post("/api/limpar-sessao", async (req, res) => {
   _tentativasReconexao = 0;
 
   // Apaga os dados de sessão do LocalAuth
-  const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, ".wwebjs_auth");
+  const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
   if (fs.existsSync(sessionPath)) {
     fs.rmSync(sessionPath, { recursive: true, force: true });
     console.log("🗑️  Sessão apagada com sucesso.");

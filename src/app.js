@@ -792,7 +792,7 @@ function aplicarSugestao(tipo) {
     msgFn = r => `Olá, {nome}! Seu contrato do apartamento {apartamento} venceu em {terminoContrato}. Entre em contato para renovação.`;
   } else if (tipo === "ano_novo") {
     clientes = todosOsDados;
-    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 A Tech Corretor agradece sua confiança e deseja realizações incríveis!`;
+    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 Nós agradecemos sua confiança e desejamos realizações incríveis!`;
   }
 
   // Destaca o botão ativo

@@ -128,3 +128,14 @@ curl -fsSL https://raw.githubusercontent.com/rodrigofcpereira/real-estate-agent/
 ```
 
 Após a instalação o serviço sobe automaticamente e reinicia com a VM.
+
+## Manipular a VPS no terminal
+
+gcloud compute ssh instance-20260701-143850 --zone=us-central1-b --command='sed -n "320,340p" /home/hybriduzapp/tech-corretor/node_modules/whatsapp-web.js/src/Client.js'
+
+gcloud compute ssh instance-20260701-143850 --zone=us-central1-b --command='sudo journalctl -u tech-corretor -n 40 --no-pager'                                       
+
+git add server.js && git commit -m "fix: não cacheia null no resolverNumero + timeout 25s na VPS + limpa cache ao desconectar" && git push origin main && ./update-vps.sh
+
+## Site do APP
+https://techcorretor.duckdns.org/
