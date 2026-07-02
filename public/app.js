@@ -29,6 +29,8 @@ let unsubscribePropriedades = null;
 let todosOsDados = [];
 let dadosFiltrados = [];
 let chipAtivo = 'todos';
+let paginaAtual = 1;
+const ITENS_POR_PAGINA = 10;
 
 // ---- Inicialização ----
 document.addEventListener("DOMContentLoaded", () => {
@@ -171,8 +173,16 @@ function renderizarTabela(dados) {
   tbody.innerHTML = "";
   count.textContent = dados.length;
 
-  if (dados.length === 0) { aviso.style.display = "flex"; return; }
+  if (dados.length === 0) { aviso.style.display = "flex"; renderizarPaginacao(0); return; }
   aviso.style.display = "none";
+
+  // Garantir página válida
+  const totalPaginas = Math.ceil(dados.length / ITENS_POR_PAGINA);
+  if (paginaAtual > totalPaginas) paginaAtual = totalPaginas;
+  if (paginaAtual < 1) paginaAtual = 1;
+
+  const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+  const paginaDados = dados.slice(inicio, inicio + ITENS_POR_PAGINA);
 
   // Detecta se tabela tem scroll horizontal
   requestAnimationFrame(() => {
@@ -183,7 +193,7 @@ function renderizarTabela(dados) {
     }
   });
 
-  dados.forEach(r => {
+  paginaDados.forEach(r => {
     const tr = document.createElement("tr");
     const vencido     = isVencido(r);
     const aniversario = isAniversariante(r);
@@ -233,6 +243,43 @@ function renderizarTabela(dados) {
     `;
     tbody.appendChild(tr);
   });
+
+  renderizarPaginacao(dados.length);
+}
+
+// ---- Paginação ----
+function renderizarPaginacao(total) {
+  const container = document.getElementById("paginacao");
+  if (!container) return;
+  const totalPaginas = Math.ceil(total / ITENS_POR_PAGINA);
+  if (totalPaginas <= 1) { container.innerHTML = ""; return; }
+
+  const inicioItem = (paginaAtual - 1) * ITENS_POR_PAGINA + 1;
+  const fimItem    = Math.min(paginaAtual * ITENS_POR_PAGINA, total);
+
+  let html = `<span class="paginacao-info">Exibindo ${inicioItem}–${fimItem} de ${total}</span><div class="paginacao-btns">`;
+  html += `<button class="pag-btn" onclick="irParaPagina(1)" ${paginaAtual===1?'disabled':''} title="Primeira">«</button>`;
+  html += `<button class="pag-btn" onclick="irParaPagina(${paginaAtual-1})" ${paginaAtual===1?'disabled':''} title="Anterior">‹</button>`;
+
+  const p1 = Math.max(1, paginaAtual - 2);
+  const p2 = Math.min(totalPaginas, paginaAtual + 2);
+  if (p1 > 1) html += `<span class="pag-ellipsis">…</span>`;
+  for (let i = p1; i <= p2; i++) {
+    html += `<button class="pag-btn${i===paginaAtual?' pag-btn-active':''}" onclick="irParaPagina(${i})">${i}</button>`;
+  }
+  if (p2 < totalPaginas) html += `<span class="pag-ellipsis">…</span>`;
+
+  html += `<button class="pag-btn" onclick="irParaPagina(${paginaAtual+1})" ${paginaAtual===totalPaginas?'disabled':''} title="Próxima">›</button>`;
+  html += `<button class="pag-btn" onclick="irParaPagina(${totalPaginas})" ${paginaAtual===totalPaginas?'disabled':''} title="Última">»</button>`;
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function irParaPagina(pagina) {
+  const totalPaginas = Math.ceil(dadosFiltrados.length / ITENS_POR_PAGINA);
+  paginaAtual = Math.max(1, Math.min(pagina, totalPaginas));
+  renderizarTabela(dadosFiltrados);
+  document.querySelector('.table-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---- Pesquisar ----
@@ -262,6 +309,7 @@ function aplicarFiltros(termoBusca) {
   }
 
   dadosFiltrados = base;
+  paginaAtual = 1;
   renderizarTabela(dadosFiltrados);
 }
 
@@ -406,11 +454,22 @@ function editarCliente(idx) {
 }
 
 // ---- Salvar (criar ou atualizar) ----
+function storageExcedido(extraBytes = 0) {
+  if (!userData) return false;
+  const usado = (userData.storageUsed || 0) + extraBytes;
+  const limite = userData.storageLimit || 10 * 1024 * 1024 * 1024;
+  return usado > limite;
+}
+
 async function salvarCliente(e) {
   e.preventDefault();
   if (!validarForm()) return;
 
   const idx = parseInt(document.getElementById("clienteIndex").value);
+  if (idx === -1 && storageExcedido(ESTIMATIVA_CLIENTE)) {
+    mostrarToast("❌ Armazenamento cheio. Entre em contato com o administrador.", "err");
+    return;
+  }
   const cliente = {
     nome:           document.getElementById("f-nome").value.trim(),
     telefone:       document.getElementById("f-telefone").value.trim(),
@@ -425,6 +484,7 @@ async function salvarCliente(e) {
     if (idx === -1) {
       cliente.createdAt = firebase.firestore.FieldValue.serverTimestamp();
       await db.collection("clientes").add(cliente);
+      await atualizarStorageUsado(ESTIMATIVA_CLIENTE);
       mostrarToast("✅ Cliente adicionado!", "ok");
     } else {
       const docId = todosOsDados[idx]._firestoreId || todosOsDados[idx].id;
@@ -498,6 +558,7 @@ async function confirmarRemocao() {
   clienteParaRemover = -1;
   try {
     await db.collection("clientes").doc(docId).delete();
+    await atualizarStorageUsado(-ESTIMATIVA_CLIENTE);
     mostrarToast(`🗑️ ${nome} removido.`);
   } catch (err) {
     console.error("Erro ao remover cliente:", err);
@@ -956,6 +1017,7 @@ function carregarPropriedades() {
         propriedades.push(data);
       });
       renderizarPropriedades();
+      recalcularStorageTotal();
     }, error => {
       console.error("Erro ao carregar propriedades:", error);
     });
@@ -999,11 +1061,11 @@ function renderizarPropriedades() {
     } else if (fotos.length === 1) {
       imgAreaHtml = `
         <div class="prop-img">
-          <img src="${fotos[0]}" alt="Foto" />
+          <img src="${urlFoto(fotos[0])}" alt="Foto" />
         </div>`;
     } else {
       const slides = fotos.map(f =>
-        `<div class="prop-carousel-slide"><img src="${f}" alt="Foto" /></div>`
+        `<div class="prop-carousel-slide"><img src="${urlFoto(f)}" alt="Foto" /></div>`
       ).join('');
       const dots = fotos.map((_, di) =>
         `<button class="prop-carousel-dot${di === 0 ? ' active' : ''}" onclick="carouselDot(this,${i},${di})"></button>`
@@ -1036,7 +1098,7 @@ function renderizarPropriedades() {
           ${detalhes.length ? `<div class="prop-details">${detalhes.join('')}</div>` : ''}
           ${p.descricao ? `<p class="prop-desc">${p.descricao}</p>` : ''}
           <div class="prop-footer">
-            <span class="prop-preco">${p.preco || '—'}</span>
+            <span class="prop-preco">${formatarPreco(p.preco)}</span>
             <div class="prop-actions">
               <button class="btn-icon btn-icon-edit" onclick="abrirFormProp(${i})" title="Editar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1081,7 +1143,7 @@ function abrirFormProp(idx = -1) {
     document.getElementById("p-endereco").value  = p.endereco  || "";
     document.getElementById("p-bairro").value    = p.bairro    || "";
     document.getElementById("p-cidade").value    = p.cidade    || "";
-    document.getElementById("p-preco").value     = p.preco     || "";
+    document.getElementById("p-preco").value     = precoParaInput(p.preco);
     document.getElementById("p-area").value      = p.area      || "";
     document.getElementById("p-quartos").value   = p.quartos   || "";
     document.getElementById("p-banheiros").value = p.banheiros || "";
@@ -1113,13 +1175,18 @@ async function salvarProp(event) {
     endereco:  document.getElementById("p-endereco").value.trim(),
     bairro:    document.getElementById("p-bairro").value.trim(),
     cidade:    document.getElementById("p-cidade").value.trim(),
-    preco:     document.getElementById("p-preco").value.trim(),
-    area:      document.getElementById("p-area").value.trim(),
+    preco:     limparPreco(document.getElementById("p-preco").value),
+    area:      limparDecimal(document.getElementById("p-area").value),
     quartos:   document.getElementById("p-quartos").value,
     banheiros: document.getElementById("p-banheiros").value,
     vagas:     document.getElementById("p-vagas").value,
     descricao: document.getElementById("p-desc").value.trim(),
   };
+
+  if (idx === -1 && storageExcedido()) {
+    mostrarToast("❌ Armazenamento cheio. Entre em contato com o administrador.", "err");
+    return;
+  }
 
   const btn = event.target.querySelector("button[type=submit]");
   if (btn) { btn.disabled = true; btn.textContent = "Salvando..."; }
@@ -1148,11 +1215,62 @@ async function salvarProp(event) {
   fecharFormProp();
 }
 
+const ESTIMATIVA_CLIENTE = 2048; // 2 KB por cliente
+
+function urlFoto(f) {
+  return typeof f === 'object' && f !== null ? f.url : f;
+}
+
+// ---- Storage Helpers ----
+function calcularTamanhoBase64(dataUrl) {
+  const base64 = dataUrl.split(",")[1] || dataUrl;
+  return Math.round(base64.length * 0.75);
+}
+
+async function atualizarStorageUsado(deltaBytes) {
+  if (!currentUser || !userData) return;
+  const ref = db.collection("users").doc(currentUser.uid);
+  try {
+    await db.runTransaction(async t => {
+      const doc = await t.get(ref);
+      const atual = (doc.data() && doc.data().storageUsed) || 0;
+      t.update(ref, { storageUsed: Math.max(0, atual + deltaBytes) });
+    });
+    userData.storageUsed = Math.max(0, (userData.storageUsed || 0) + deltaBytes);
+    atualizarStorageBar();
+  } catch (err) {
+    console.error("Erro ao atualizar storageUsed:", err);
+  }
+}
+
+async function recalcularStorageTotal() {
+  if (!currentUser) return;
+  let total = (todosOsDados || []).length * ESTIMATIVA_CLIENTE;
+  for (const p of propriedades) {
+    const fotos = Array.isArray(p.fotos) ? p.fotos : (p.foto ? [p.foto] : []);
+    for (const f of fotos) {
+      if (typeof f === 'object' && f !== null && f.size) total += f.size;
+    }
+  }
+  try {
+    await db.collection("users").doc(currentUser.uid).update({ storageUsed: total });
+    if (userData) userData.storageUsed = total;
+    atualizarStorageBar();
+  } catch (err) {
+    console.error("Erro ao recalcular storage:", err);
+  }
+}
+
 // ---- Upload de fotos para Firebase Storage ----
 async function uploadFotos(fotosArray) {
   const urls = [];
+  let totalBytes = 0;
   for (const foto of fotosArray) {
-    if (foto.startsWith("https://")) {
+    if (typeof foto === 'object' && foto !== null && foto.url) {
+      urls.push(foto);
+      continue;
+    }
+    if (typeof foto === 'string' && foto.startsWith("https://")) {
       urls.push(foto);
       continue;
     }
@@ -1161,11 +1279,14 @@ async function uploadFotos(fotosArray) {
       const ref = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
       const snapshot = await ref.putString(foto, "data_url");
       const url = await snapshot.ref.getDownloadURL();
-      urls.push(url);
+      const tamanho = calcularTamanhoBase64(foto);
+      urls.push({ url, size: tamanho });
+      totalBytes += tamanho;
     } catch (err) {
       console.error("Erro ao fazer upload de foto:", err);
     }
   }
+  if (totalBytes > 0) await atualizarStorageUsado(totalBytes);
   return urls;
 }
 
@@ -1201,7 +1322,7 @@ function renderizarFotosForm() {
 
   const thumbs = fotosTemp.map((src, i) => `
     <div class="foto-thumb">
-      <img src="${src}" alt="Foto ${i+1}" />
+      <img src="${urlFoto(src)}" alt="Foto ${i+1}" />
       ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
       <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
     </div>`).join('');
@@ -1259,9 +1380,16 @@ function confirmarRemoverProp(idx) {
   if (tituloEl) tituloEl.textContent = "Remover propriedade";
   document.getElementById("confirmNome").textContent = p.titulo;
   document.getElementById("btnConfirmRemover").onclick = async () => {
-    const docId = propriedades[propIndexRemover]._firestoreId || propriedades[propIndexRemover].id;
+    const pDel = propriedades[propIndexRemover];
+    const docId = pDel._firestoreId || pDel.id;
+    let bytesLiberados = 0;
+    const fotosDel = Array.isArray(pDel.fotos) ? pDel.fotos : (pDel.foto ? [pDel.foto] : []);
+    for (const f of fotosDel) {
+      if (typeof f === 'object' && f !== null && f.size) bytesLiberados += f.size;
+    }
     try {
       await db.collection("propriedades").doc(docId).delete();
+      if (bytesLiberados > 0) await atualizarStorageUsado(-bytesLiberados);
       mostrarToast("🗑️ Propriedade removida.", "ok");
     } catch (err) {
       console.error("Erro ao remover propriedade:", err);
@@ -1279,7 +1407,7 @@ function gerarMensagemProp(prop) {
   linhas.push(`🏠 *${prop.titulo}*`);
   linhas.push('');
 
-  const info = [prop.tipo, prop.area].filter(Boolean).join(' · ');
+  const info = [prop.tipo, prop.area ? `${prop.area} m²` : ''].filter(Boolean).join(' · ');
   if (info) linhas.push(`🏷️ ${info}`);
 
   const end = [prop.endereco, prop.bairro, prop.cidade].filter(Boolean).join(', ');
@@ -1294,7 +1422,7 @@ function gerarMensagemProp(prop) {
   if (prop.descricao) { linhas.push(''); linhas.push(prop.descricao); }
 
   linhas.push('');
-  if (prop.preco) linhas.push(`💰 *${prop.preco}*`);
+  if (prop.preco) linhas.push(`💰 *${formatarPreco(prop.preco)}*`);
   linhas.push('');
   linhas.push('📞 Entre em contato com *Tech Corretor* para mais informações!');
 
@@ -1478,4 +1606,43 @@ function salvarConfiguracaoServidor() {
     ? `✅ Conectando ao servidor Oracle Cloud:\n${urlRaw}`
     : '✅ Usando servidor local (este computador).';
   alert(msg);
+}
+
+// ── Máscaras de input ────────────────────────────────────────────
+function limparPreco(v) {
+  return v.replace(/\./g, "").replace(",", ".");
+}
+function limparDecimal(v) {
+  return v.replace(",", ".");
+}
+
+function mascaraPreco(el) {
+  let v = el.value.replace(/\D/g, "");
+  if (!v) { el.value = ""; return; }
+  v = (parseInt(v) / 100).toFixed(2);
+  v = v.replace(".", ",");
+  v = v.replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1.");
+  el.value = v;
+}
+
+function mascaraDecimal(el) {
+  el.value = el.value.replace(/[^0-9,]/g, "");
+}
+
+function mascaraInteiro(el) {
+  el.value = el.value.replace(/\D/g, "");
+}
+
+function formatarPreco(v) {
+  if (!v) return '—';
+  const num = parseFloat(v);
+  if (isNaN(num)) return v;
+  return 'R$ ' + num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function precoParaInput(v) {
+  if (!v) return '';
+  const num = parseFloat(v);
+  if (isNaN(num)) return v;
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

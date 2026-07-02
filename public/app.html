@@ -86,16 +86,27 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="user-badge">
-        <div class="user-avatar">LF</div>
-        <div class="user-info">
-          <span class="user-name">LF Imóveis</span>
-          <span class="user-role" id="user-email">Conectando...</span>
+      <div class="storage-bar" id="storageBar">
+        <div class="storage-bar-header">
+          <span class="storage-bar-label">Armazenamento</span>
+          <span class="storage-bar-text" id="storageText">0 MB / 10 GB</span>
+        </div>
+        <div class="storage-bar-track">
+          <div class="storage-bar-fill" id="storageFill" style="width:0%"></div>
         </div>
       </div>
-      <button class="btn-logout" onclick="logout()" title="Sair">
+      <div class="sidebar-user-row">
+        <div class="user-badge">
+          <div class="user-avatar">LF</div>
+          <div class="user-info">
+            <span class="user-name">LF Imóveis</span>
+            <span class="user-role" id="user-email">Conectando...</span>
+          </div>
+        </div>
+        <button class="btn-logout" onclick="logout()" title="Sair">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
+      </div>
     </div>
   </aside>
 
@@ -217,6 +228,7 @@
             <p>Nenhum resultado encontrado</p>
           </div>
         </div>
+        <div id="paginacao" class="paginacao"></div>
         </div>
       </section>
 
@@ -487,23 +499,23 @@
         <div class="form-row">
           <div class="form-group">
             <label for="p-preco">Preço <span class="req">*</span></label>
-            <input type="text" id="p-preco" placeholder="R$ 450.000" required />
+            <input type="text" id="p-preco" placeholder="R$ 450.000" required oninput="mascaraPreco(this)" />
           </div>
           <div class="form-group">
             <label for="p-area">Área</label>
-            <input type="text" id="p-area" placeholder="95m²" />
+            <input type="text" id="p-area" placeholder="95" oninput="mascaraDecimal(this)" />
           </div>
           <div class="form-group">
             <label for="p-quartos">Quartos</label>
-            <input type="number" id="p-quartos" placeholder="0" min="0" />
+            <input type="text" id="p-quartos" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
           <div class="form-group">
             <label for="p-banheiros">Banheiros</label>
-            <input type="number" id="p-banheiros" placeholder="0" min="0" />
+            <input type="text" id="p-banheiros" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
           <div class="form-group">
             <label for="p-vagas">Vagas</label>
-            <input type="number" id="p-vagas" placeholder="0" min="0" />
+            <input type="text" id="p-vagas" placeholder="0" oninput="mascaraInteiro(this)" />
           </div>
         </div>
 
@@ -586,7 +598,10 @@
       </div>
 
       <div class="disparo-clientes-header">
-        <span>Destinatários</span>
+        <span>
+          Destinatários
+          <span class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</span>
+        </span>
         <div class="disparo-clientes-header-btns">
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(true)">Todos</button>
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(false)">Nenhum</button>
@@ -594,7 +609,6 @@
       </div>
 
       <div class="disparo-lista" id="disparo-lista"></div>
-      <p class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</p>
 
     </div>
   </div>
@@ -692,6 +706,17 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ===== EXPIRED OVERLAY ===== -->
+  <div id="expired-overlay" class="expired-overlay" style="display:none;">
+    <div class="expired-card">
+      <div class="expired-icon">🔒</div>
+      <h2>Acesso Expirado</h2>
+      <p>Seu período de acesso ao Tech Corretor expirou.</p>
+      <p style="margin-top:8px;font-size:14px;color:#94a3b8;">Entre em contato com o administrador para renovar sua licença.</p>
+      <button class="btn-logout-expired" onclick="logout()">Sair</button>
     </div>
   </div>
 
