@@ -1009,6 +1009,7 @@ let propriedades       = [];
 let propIndexRemover   = -1;
 let propIndexDisparo   = -1;
 let mensagemTipoAtivo  = null;
+let disparoMidias      = []; // data URLs de imagens/vídeos a enviar junto com a mensagem
 
 // ---- Carregar propriedades do Firestore (tempo real) ----
 function carregarPropriedades() {
@@ -1100,14 +1101,21 @@ function renderizarPropriedades() {
           <svg class="prop-img-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="52" height="52"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         </div>`;
     } else if (fotos.length === 1) {
+      const f0 = fotos[0];
       imgAreaHtml = `
         <div class="prop-img">
-          <img src="${urlFoto(fotos[0])}" alt="Foto" />
+          ${ehVideo(f0)
+            ? `<video src="${urlFoto(f0)}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
+            : `<img src="${urlFoto(f0)}" alt="Foto" />`}
         </div>`;
     } else {
-      const slides = fotos.map(f =>
-        `<div class="prop-carousel-slide"><img src="${urlFoto(f)}" alt="Foto" /></div>`
-      ).join('');
+      const slides = fotos.map(f => {
+        const src = urlFoto(f);
+        const media = ehVideo(f)
+          ? `<video src="${src}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
+          : `<img src="${src}" alt="Foto" />`;
+        return `<div class="prop-carousel-slide">${media}</div>`;
+      }).join('');
       const dots = fotos.map((_, di) =>
         `<button class="prop-carousel-dot${di === 0 ? ' active' : ''}" onclick="carouselDot(this,${i},${di})"></button>`
       ).join('');
@@ -1262,6 +1270,20 @@ function urlFoto(f) {
   return typeof f === 'object' && f !== null ? f.url : f;
 }
 
+// Detecta se uma mídia (data URL, URL HTTPS ou objeto {url,type}) é vídeo
+function ehVideo(src) {
+  if (typeof src === 'object' && src !== null) {
+    if (src.type && src.type.startsWith('video/')) return true;
+    const u = src.url || '';
+    return u.startsWith('data:video') || /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(u);
+  }
+  if (typeof src === 'string') {
+    if (src.startsWith('data:video')) return true;
+    return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(src);
+  }
+  return false;
+}
+
 // ---- Storage Helpers ----
 function calcularTamanhoBase64(dataUrl) {
   const base64 = dataUrl.split(",")[1] || dataUrl;
@@ -1302,7 +1324,7 @@ async function recalcularStorageTotal() {
   }
 }
 
-// ---- Upload de fotos para Firebase Storage ----
+// ---- Upload de fotos/vídeos para Firebase Storage ----
 async function uploadFotos(fotosArray) {
   const urls = [];
   let totalBytes = 0;
@@ -1316,15 +1338,20 @@ async function uploadFotos(fotosArray) {
       continue;
     }
     try {
-      const fileName = `foto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
-      const ref = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
-      const snapshot = await ref.putString(foto, "data_url");
-      const url = await snapshot.ref.getDownloadURL();
-      const tamanho = calcularTamanhoBase64(foto);
-      urls.push({ url, size: tamanho });
+      // Detecta mime type e extensão a partir do data URL
+      const mimeMatch = foto.match(/^data:([^;]+);/);
+      const mimetype  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const ext       = mimetype.split('/')[1]?.replace('jpeg','jpg').replace('quicktime','mov') || 'bin';
+      const prefix    = mimetype.startsWith('video/') ? 'video' : 'foto';
+      const fileName  = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const ref       = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
+      const snapshot  = await ref.putString(foto, "data_url");
+      const url       = await snapshot.ref.getDownloadURL();
+      const tamanho   = calcularTamanhoBase64(foto);
+      urls.push({ url, size: tamanho, type: mimetype });
       totalBytes += tamanho;
     } catch (err) {
-      console.error("Erro ao fazer upload de foto:", err);
+      console.error("Erro ao fazer upload de mídia:", err);
     }
   }
   if (totalBytes > 0) await atualizarStorageUsado(totalBytes);
@@ -1338,10 +1365,10 @@ function handleFotos(event) {
   const files = [...event.target.files];
   const limite = 10;
   const restam = limite - fotosTemp.length;
-  if (restam <= 0) { mostrarToast("⚠️ Limite de 10 fotos atingido.", "err"); return; }
+  if (restam <= 0) { mostrarToast("⚠️ Limite de 10 mídias atingido.", "err"); return; }
 
   const filesToProcess = files.slice(0, restam);
-  if (files.length > restam) mostrarToast(`⚠️ Apenas ${restam} foto(s) adicionada(s) (limite de ${limite}).`, "err");
+  if (files.length > restam) mostrarToast(`⚠️ Apenas ${restam} mídia(s) adicionada(s) (limite de ${limite}).`, "err");
 
   let processed = 0;
   filesToProcess.forEach(file => {
@@ -1361,17 +1388,25 @@ function renderizarFotosForm() {
   const grid = document.getElementById("fotos-grid");
   if (!grid) return;
 
-  const thumbs = fotosTemp.map((src, i) => `
-    <div class="foto-thumb">
-      <img src="${urlFoto(src)}" alt="Foto ${i+1}" />
-      ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
-      <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
-    </div>`).join('');
+  const thumbs = fotosTemp.map((src, i) => {
+    const srcUrl = urlFoto(src);
+    const video  = ehVideo(src);
+    const media  = video
+      ? `<video src="${srcUrl}" class="foto-thumb-video" muted playsinline preload="metadata"></video>
+         <div class="foto-thumb-play-icon">▶</div>`
+      : `<img src="${srcUrl}" alt="Foto ${i+1}" />`;
+    return `
+      <div class="foto-thumb">
+        ${media}
+        ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
+        <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
+      </div>`;
+  }).join('');
 
   const addBtn = fotosTemp.length < 10 ? `
-    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto">
+    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto ou vídeo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-      <span>Adicionar foto</span>
+      <span>Foto / Vídeo</span>
     </div>` : '';
 
   grid.innerHTML = thumbs + addBtn;
@@ -1521,6 +1556,56 @@ function fecharModalDisparo() {
   document.getElementById("modalDisparo").style.display = "none";
   propIndexDisparo = -1;
   mensagemTipoAtivo = null;
+  disparoMidias = [];
+  renderizarPreviewMidias();
+}
+
+// ---- Upload de mídias (foto/vídeo) no disparo ----
+function adicionarMidiaDisparo(input) {
+  const files = Array.from(input.files || []);
+  files.forEach(file => {
+    if (disparoMidias.length >= 5) {
+      alert("Máximo de 5 arquivos por disparo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      disparoMidias.push(e.target.result);
+      renderizarPreviewMidias();
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = ""; // permite selecionar o mesmo arquivo de novo
+}
+
+function removerMidiaDisparo(idx) {
+  disparoMidias.splice(idx, 1);
+  renderizarPreviewMidias();
+}
+
+function renderizarPreviewMidias() {
+  const lista = document.getElementById("disparo-midia-list");
+  if (!lista) return;
+  lista.innerHTML = "";
+  disparoMidias.forEach((dataUrl, idx) => {
+    const isVideo = dataUrl.startsWith("data:video");
+    const item = document.createElement("div");
+    item.className = "disparo-midia-item";
+    if (isVideo) {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-video">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    } else {
+      item.innerHTML = `
+        <img class="disparo-midia-thumb" src="${dataUrl}" alt="mídia ${idx + 1}">
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    }
+    lista.appendChild(item);
+  });
 }
 
 function selecionarTodosClientes(sel) {
@@ -1646,9 +1731,11 @@ async function dispararPropriedade() {
 
   const propIdx = propIndexDisparo;
   const msgTipo = mensagemTipoAtivo;
+  const fotos = [...disparoMidias]; // captura ANTES de fecharModalDisparo limpar o array
+
   fecharModalDisparo();
 
-  let titulo, fotos = [];
+  let titulo;
 
   if (propIdx >= 0) {
     const prop = propriedades[propIdx];

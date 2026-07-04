@@ -535,14 +535,14 @@
 
         <div class="form-row">
           <div class="form-group" style="flex:1">
-            <label>Fotos do imóvel <span style="font-weight:400;color:var(--text-light)">(até 10 imagens)</span></label>
+            <label>Fotos e vídeos <span style="font-weight:400;color:var(--text-light)">(até 10 mídias)</span></label>
             <div class="fotos-grid" id="fotos-grid">
-              <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto">
+              <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto ou vídeo">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <span>Adicionar foto</span>
+                <span>Foto / Vídeo</span>
               </div>
             </div>
-            <input type="file" id="p-fotos" accept="image/*" multiple style="display:none;" onchange="handleFotos(event)" />
+            <input type="file" id="p-fotos" accept="image/*,video/*" multiple style="display:none;" onchange="handleFotos(event)" />
           </div>
         </div>
 
@@ -584,6 +584,14 @@
       <div class="disparo-preview">
         <div class="disparo-preview-title">✉️ Mensagem (editável)</div>
         <textarea id="disparo-mensagem" rows="7"></textarea>
+        <div class="disparo-midias">
+          <label class="disparo-midia-add" for="disparo-midia-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Foto / Vídeo
+          </label>
+          <input type="file" id="disparo-midia-input" accept="image/*,video/*" multiple style="display:none" onchange="adicionarMidiaDisparo(this)">
+          <div class="disparo-midia-list" id="disparo-midia-list"></div>
+        </div>
         <div class="disparo-placeholders" id="disparo-placeholders">
           <div class="disparo-placeholders-row">
             <span class="disparo-placeholders-hint" onclick="document.getElementById('disparo-placeholders').classList.toggle('open')">

@@ -4,15 +4,22 @@ service firebase.storage {
 
     // ── Fotos de propriedades ─────────────────────────────────────────────────
     // Cada usuário lê, faz upload e exclui somente dentro da sua própria pasta.
-    // Upload restrito a imagens (jpeg, png, webp, etc.) com no máximo 10 MB.
+    // Upload restrito a imagens e vídeos com tamanho máximo por tipo.
     match /fotos/{userId}/{fileName} {
       allow read: if request.auth != null
                   && request.auth.uid == userId;
 
       allow create, update: if request.auth != null
                   && request.auth.uid == userId
-                  && request.resource.size  <= 10 * 1024 * 1024
-                  && request.resource.contentType.matches('image/.*');
+                  && (
+                    // Imagens: até 10 MB
+                    (request.resource.contentType.matches('image/.*')
+                     && request.resource.size <= 10 * 1024 * 1024)
+                    ||
+                    // Vídeos: até 200 MB
+                    (request.resource.contentType.matches('video/.*')
+                     && request.resource.size <= 200 * 1024 * 1024)
+                  );
 
       allow delete: if request.auth != null
                     && request.auth.uid == userId;

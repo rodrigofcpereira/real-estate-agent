@@ -58,7 +58,7 @@ const io     = new Server(server, {
 });
 
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
-app.use(express.json({ limit: "20mb" })); // suporta imagens em base64
+app.use(express.json({ limit: "50mb" })); // suporta imagens e vídeos em base64
 
 // Servir o app local (app.html como raiz)
 app.get("/", (req, res) => {
@@ -427,31 +427,42 @@ function dataURLparaMedia(dataURL, nomeArquivo = "imovel.jpg") {
 }
 
 // Suporta tanto data URLs (base64) quanto URLs HTTPS do Firebase Storage
-async function processarMedia(fotoInput, nomeArquivo = "imovel.jpg") {
+// nomeArquivo = null → detecta automaticamente a extensão pelo mime type
+async function processarMedia(fotoInput, nomeArquivo = null) {
   if (typeof fotoInput !== 'string' || !fotoInput) return null;
 
   // URL HTTPS → baixa o arquivo e converte para MessageMedia
   if (fotoInput.startsWith('http')) {
     try {
       const media = await MessageMedia.fromUrl(fotoInput, { unsafeMime: true });
-      if (media) media.filename = nomeArquivo;
+      if (media && nomeArquivo) media.filename = nomeArquivo;
       return media;
     } catch(e) {
-      logFile(`⚠️ Falha ao baixar foto via URL (${nomeArquivo}): ${e.message}`);
+      logFile(`⚠️ Falha ao baixar mídia via URL (${nomeArquivo || fotoInput}): ${e.message}`);
       return null;
     }
   }
 
-  // data URL base64
-  return dataURLparaMedia(fotoInput, nomeArquivo);
+  // data URL base64 → detecta mime type e gera nome de arquivo adequado
+  const match = fotoInput.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mimetype = match[1];
+  if (!nomeArquivo) {
+    // ex: "image/jpeg" → "imovel.jpg", "video/mp4" → "imovel.mp4"
+    const ext = mimetype.split('/')[1]?.replace('jpeg', 'jpg') || 'bin';
+    nomeArquivo = `midia_${Date.now()}.${ext}`;
+  }
+  return new MessageMedia(mimetype, match[2], nomeArquivo);
 }
 
 // ---- API: Enviar mensagem ----
 app.post("/api/send", async (req, res) => {
-  const { telefone, mensagem } = req.body;
+  const { telefone, mensagem, midias } = req.body;
 
-  if (!telefone || !mensagem) {
-    return res.status(400).json({ ok: false, erro: "telefone e mensagem são obrigatórios" });
+  const midiasArray = Array.isArray(midias) ? midias : (midias ? [midias] : []);
+
+  if (!telefone || (!mensagem && midiasArray.length === 0)) {
+    return res.status(400).json({ ok: false, erro: "telefone e mensagem (ou mídia) são obrigatórios" });
   }
   if (!clienteWA || whatsappStatus !== "pronto") {
     return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
@@ -462,9 +473,22 @@ app.post("/api/send", async (req, res) => {
     return res.status(404).json({ ok: false, erro: `Número ${telefone} não encontrado no WhatsApp` });
   }
 
+  // Pré-converte mídias (suporta data URL base64 e URL HTTPS – imagens e vídeos)
+  const mediasRaw = await Promise.all(midiasArray.map((m) => processarMedia(m, null)));
+  const medias = mediasRaw.filter(Boolean);
+
   try {
-    await clienteWA.sendMessage(resolvido.chatId, mensagem);
-    console.log(`📤 Mensagem enviada para ${resolvido.numero}`);
+    if (medias.length === 0) {
+      await clienteWA.sendMessage(resolvido.chatId, mensagem);
+    } else if (medias.length === 1) {
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagem || "" });
+    } else {
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagem || "" });
+      for (let i = 1; i < medias.length; i++) {
+        await clienteWA.sendMessage(resolvido.chatId, medias[i]);
+      }
+    }
+    console.log(`📤 Mensagem enviada para ${resolvido.numero} (${medias.length} mídia(s))`);
     res.json({ ok: true, numero: resolvido.numero });
   } catch (err) {
     console.error("Erro ao enviar mensagem:", err.message);

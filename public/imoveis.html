@@ -240,6 +240,24 @@
       display: block;
       pointer-events: none;
     }
+    .carousel-slide-video {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+    .lcard-img-video {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+    }
+    .lcard-play-icon {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; color: #fff;
+      text-shadow: 0 2px 8px rgba(0,0,0,.7);
+      background: rgba(0,0,0,.18);
+      pointer-events: none;
+    }
     .carousel-empty {
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -411,6 +429,15 @@
     function urlFoto(f) {
       return typeof f === 'object' && f !== null ? (f.url || '') : (f || '');
     }
+    function ehVideo(f) {
+      if (typeof f === 'object' && f !== null) {
+        if (f.type && f.type.startsWith('video/')) return true;
+        const u = f.url || '';
+        return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(u);
+      }
+      if (typeof f === 'string') return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(f);
+      return false;
+    }
     function formatPreco(v) {
       if (!v) return '';
       const n = parseFloat(String(v).replace(/[^\d,\.]/g, '').replace(',', '.'));
@@ -499,8 +526,10 @@
 
       grid.innerHTML = lista.map(p => {
         const fotosRaw = Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (p.foto ? [p.foto] : []);
-        const fotos    = fotosRaw.map(urlFoto).filter(Boolean);
-        const capa     = fotos[0] || '';
+        const fotos    = fotosRaw.filter(f => urlFoto(f));
+        const capa     = fotos[0] || null;
+        const capaUrl  = capa ? urlFoto(capa) : '';
+        const capaEhVideo = capa ? ehVideo(capa) : false;
         const precoFmt = formatPreco(p.preco);
         const end      = [p.bairro, p.cidade].filter(Boolean).join(', ');
 
@@ -513,8 +542,11 @@
         return `
           <a class="lcard" href="?id=${p._id}">
             <div class="lcard-img">
-              ${capa
-                ? `<img src="${capa}" alt="${p.titulo || ''}" loading="lazy">`
+              ${capaUrl
+                ? capaEhVideo
+                  ? `<video src="${capaUrl}" class="lcard-img-video" muted playsinline preload="metadata"></video>
+                     <div class="lcard-play-icon">▶</div>`
+                  : `<img src="${capaUrl}" alt="${p.titulo || ''}" loading="lazy">`
                 : `<div class="lcard-img-empty">🏠</div>`}
               ${p.tipo ? `<span class="lcard-tipo">${p.tipo}</span>` : ''}
               ${fotos.length > 1 ? `<span class="lcard-foto-count">📷 ${fotos.length}</span>` : ''}
@@ -579,7 +611,8 @@
 
       const fotosRaw = Array.isArray(prop.fotos) && prop.fotos.length
         ? prop.fotos : (prop.foto ? [prop.foto] : []);
-      buildCarousel(fotosRaw.map(urlFoto).filter(Boolean));
+      // Passa os objetos raw para buildCarousel poder detectar vídeos pelo campo `type`
+      buildCarousel(fotosRaw.filter(f => urlFoto(f)));
 
       document.getElementById('loading').style.display = 'none';
       document.getElementById('content').style.display = 'block';
@@ -604,9 +637,13 @@
         return;
       }
 
-      track.innerHTML = fotos.map((url, i) =>
-        `<div class="carousel-slide"><img src="${url}" alt="Foto ${i+1}" loading="${i===0?'eager':'lazy'}"></div>`
-      ).join('');
+      track.innerHTML = fotos.map((f, i) => {
+        const src = urlFoto(f);
+        const media = ehVideo(f)
+          ? `<video src="${src}" class="carousel-slide-video" controls playsinline preload="metadata"></video>`
+          : `<img src="${src}" alt="Foto ${i+1}" loading="${i===0?'eager':'lazy'}">`;
+        return `<div class="carousel-slide">${media}</div>`;
+      }).join('');
 
       if (carTotal > 1 && carTotal <= 12) {
         dots.innerHTML = fotos.map((_, i) =>
