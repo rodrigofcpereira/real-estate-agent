@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Fotos de propriedades ─────────────────────────────────────────────────
+    // Cada usuário lê, faz upload e exclui somente dentro da sua própria pasta.
+    // Upload restrito a imagens (jpeg, png, webp, etc.) com no máximo 10 MB.
+    match /fotos/{userId}/{fileName} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+                  && request.auth.uid == userId
+                  && request.resource.size  <= 10 * 1024 * 1024
+                  && request.resource.contentType.matches('image/.*');
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+
+    // ── Downloads públicos (instaladores DMG / EXE) ───────────────────────────
+    // Arquivos na raiz do bucket são de leitura pública.
+    // Escrita ocorre exclusivamente via service account no deploy.sh
+    // (Admin SDK ignora as Security Rules).
+    match /{fileName} {
+      allow read:  if true;
+      allow write: if false;
+    }
+  }
+}
