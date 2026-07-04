@@ -188,9 +188,31 @@ if (!gotTheLock) {
       },
     });
 
-    // Exibe a janela apenas quando a página estiver totalmente renderizada
-    mainWindow.once("ready-to-show", () => {
+    // Exibe a janela apenas quando a página estiver totalmente renderizada.
+    // Usa múltiplos gatilhos + timeout de segurança para NUNCA ficar oculta
+    // (no Windows o "ready-to-show" às vezes não dispara → janela fantasma).
+    let shown = false;
+    const showWindow = () => {
+      if (shown || !mainWindow) return;
+      shown = true;
       mainWindow.show();
+      mainWindow.focus();
+    };
+
+    mainWindow.once("ready-to-show", showWindow);
+    mainWindow.webContents.once("did-finish-load", showWindow);
+    // Fallback final: força a exibição após 8s mesmo se algo falhar
+    const showFallback = setTimeout(showWindow, 8000);
+
+    // Se a página falhar ao carregar, mostra a janela mesmo assim (não deixa oculta)
+    mainWindow.webContents.on("did-fail-load", (_e, code, desc) => {
+      console.error(`[main] Falha ao carregar a página (${code}): ${desc}`);
+      showWindow();
+    });
+
+    mainWindow.on("closed", () => {
+      clearTimeout(showFallback);
+      mainWindow = null;
     });
 
     // Corrige DPI scaling no Windows (evita layout borrado/quebrado em telas 150%)
@@ -202,7 +224,6 @@ if (!gotTheLock) {
     }
 
     mainWindow.loadURL(`http://localhost:${serverPort}`);
-    mainWindow.on("closed", () => { mainWindow = null; });
   }
 
   // ── Inicialização ────────────────────────────────────────────────────────
