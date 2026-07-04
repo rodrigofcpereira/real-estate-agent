@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#1e293b">
-  <title>Imóveis — Tech Corretor</title>
+  <title>Imóveis — LF Imóveis</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -345,7 +345,7 @@
     <div class="listing-header">
       <div class="listing-header-top">
         <span class="listing-logo">🏢</span>
-        <h1>Tech <span>Corretor</span></h1>
+        <h1>LF <span>Imóveis</span></h1>
       </div>
       <p class="listing-subtitle">Catálogo de imóveis disponíveis</p>
       <div class="listing-search">
@@ -360,7 +360,7 @@
       <span>🔍</span>
       <p>Nenhum imóvel encontrado para esse filtro.</p>
     </div>
-    <div class="page-footer"><strong>Tech Corretor</strong> · Imóveis © 2026</div>
+    <div class="page-footer"><strong>LF Imóveis</strong> · Imóveis © 2026</div>
   </div>
 
   <!-- ===== DETAIL VIEW ===== -->
@@ -393,7 +393,7 @@
       <div class="section-label">Descrição</div>
       <div class="prop-desc" id="propDesc"></div>
     </div>
-    <div class="page-footer"><strong>Tech Corretor</strong> · Imóveis © 2026</div>
+    <div class="page-footer"><strong>LF Imóveis</strong> · Imóveis © 2026</div>
   </div>
 
   <script>
@@ -462,7 +462,7 @@
         `<button class="lchip${t === 'Todos' ? ' active' : ''}" onclick="setTipo('${t}')">${t}</button>`
       ).join('');
       filtrarImoveis();
-      document.title = 'Imóveis — Tech Corretor';
+      document.title = 'Imóveis — LF Imóveis';
     }
 
     function setTipo(tipo) {
@@ -549,7 +549,7 @@
 
     function renderDetail(prop) {
       document.getElementById('propTitulo').textContent = prop.titulo || 'Imóvel';
-      document.title = (prop.titulo || 'Imóvel') + ' — Tech Corretor';
+      document.title = (prop.titulo || 'Imóvel') + ' — LF Imóveis';
 
       const precoFmt = formatPreco(prop.preco);
       if (precoFmt) {
