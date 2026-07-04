@@ -362,7 +362,7 @@ io.on("connection", (socket) => {
 const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } — só guarda sucessos
 
 // Timeout para getNumberId: VPS lenta precisa de mais tempo
-const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 25000 : 8000;
+const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 60000 : 12000;
 
 async function resolverNumero(telefone) {
   // Remove tudo que não é dígito
@@ -385,22 +385,31 @@ async function resolverNumero(telefone) {
   }
 
   for (const candidato of candidatos) {
-    try {
-      const numberId = await Promise.race([
-        clienteWA.getNumberId(candidato),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), NUMERO_TIMEOUT_MS))
-      ]);
-      if (numberId) {
-        const resultado = { chatId: numberId._serialized, numero: candidato };
-        _cacheNumeros.set(numero, resultado);
-        return resultado;
-      }
-      logFile(`⚠️  getNumberId retornou null para ${candidato}`);
-    } catch (err) {
-      if (err.message === "timeout") {
-        // Timeout na VPS lenta — NÃO usar @c.us (quebra com LID em contas novas)
-        // Retorna null: o frontend vai mostrar erro claro ao usuário
-        logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — WhatsApp ainda carregando?`);
+    // Até 2 tentativas: WA pode estar aquecendo logo após reconectar
+    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+      try {
+        const numberId = await Promise.race([
+          clienteWA.getNumberId(candidato),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), NUMERO_TIMEOUT_MS))
+        ]);
+        if (numberId) {
+          const resultado = { chatId: numberId._serialized, numero: candidato };
+          _cacheNumeros.set(numero, resultado);
+          return resultado;
+        }
+        logFile(`⚠️  getNumberId retornou null para ${candidato}`);
+        break; // null = número realmente não existe, não adianta tentar de novo
+      } catch (err) {
+        if (err.message === "timeout") {
+          logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — tentativa ${tentativa}/2`);
+          if (tentativa < 2) {
+            // Aguarda 5s antes de tentar novamente (WA ainda aquecendo)
+            await new Promise(r => setTimeout(r, 5000));
+          }
+        } else {
+          logFile(`⚠️  Erro ao verificar ${candidato}: ${err.message}`);
+          break;
+        }
       }
     }
   }
