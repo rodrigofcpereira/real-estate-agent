@@ -172,7 +172,9 @@ async function iniciarWhatsApp() {
         "--disable-background-timer-throttling",     // evita throttle de timers em segundo plano
         "--disable-renderer-backgrounding",          // mantém renderer ativo mesmo em background
         "--disable-backgrounding-occluded-windows",  // evita throttle de janelas ocultas
-        "--js-flags=--max-old-space-size=512",       // mais heap V8 → carrega WA Web mais rápido
+        "--renderer-process-limit=1",                // só 1 renderer → economiza ~100MB RAM
+        "--disk-cache-size=52428800",                // cache de disco máx 50MB (padrão ~320MB)
+        "--js-flags=--max-old-space-size=192",       // heap V8 máx 192MB (1GB VPS tem 193MB livres)
       ],
       timeout: 300000,        // 5 min – VPS é lento no boot
       protocolTimeout: 300000 // 5 min – evita timeout em chamadas CDP longas
