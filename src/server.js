@@ -73,6 +73,7 @@ let whatsappStatus = "desconectado"; // desconectado | qr | autenticado | pronto
 let clienteWA      = null;
 let iniciando      = false; // trava para evitar chamadas simultâneas
 let _tentativasReconexao = 0; // contador de retentativas automáticas
+let _foiPronto = false;       // true somente se o WA chegou ao estado "pronto" com sessão válida
 
 // ---- Versão do WhatsApp Web: usa o cache local mais recente ----
 function resolverWebVersion() {
@@ -263,6 +264,7 @@ async function iniciarWhatsApp() {
     clienteWA.on("ready", () => {
       console.log("🟢 WhatsApp pronto para enviar mensagens!");
       _tentativasReconexao = 0;
+      _foiPronto = true; // sessão válida confirmada – permite auto-reconexão futura
       if (clienteWA && clienteWA._readyTimeout) {
         clearTimeout(clienteWA._readyTimeout);
         clienteWA._readyTimeout = null;
@@ -288,6 +290,7 @@ async function iniciarWhatsApp() {
 
       if (reason === "LOGOUT") {
         // Sessão revogada pelo celular – apaga arquivos locais para forçar novo QR
+        _foiPronto = false;
         const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
         try {
           if (fs.existsSync(sessionPath)) {
@@ -296,14 +299,20 @@ async function iniciarWhatsApp() {
           }
         } catch (_) {}
         io.emit("wa:status", { status: "erro", message: "Sessão encerrada no celular. Abra o painel e escaneie o QR Code." });
-      } else if (process.platform === "linux" && !iniciando) {
-        // Desconexão temporária na VPS – reconecta automaticamente em 20s
+      } else if (process.platform === "linux" && !iniciando && _foiPronto) {
+        // Só auto-reconecta se já teve sessão válida (estava "pronto").
+        // Se nunca chegou a "pronto" (ex: só mostrou QR e caiu), aguarda ação do usuário.
+        _foiPronto = false; // reseta para não lopar caso a reconexão também falhe
+        logFile("🔄 Reconexão automática após desconexão temporária (aguarda 20s)...");
         setTimeout(() => {
           if (whatsappStatus === "desconectado" && !iniciando) {
-            logFile("🔄 Reconexão automática após desconexão temporária...");
             iniciarWhatsApp();
           }
         }, 20000);
+      } else if (!_foiPronto) {
+        // Caiu sem ter chegado a "pronto" – sem sessão ou QR não escaneado
+        logFile("⚠️  Conexão encerrada sem sessão válida – aguardando ação do usuário.");
+        io.emit("wa:status", { status: "erro", message: "Falha ao conectar. Clique em 'Conectar WhatsApp' para tentar novamente." });
       }
     });
 
