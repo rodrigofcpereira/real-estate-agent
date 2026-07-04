@@ -1033,6 +1033,21 @@ function carregarPropriedades() {
     });
 }
 
+let filtroPropTipo  = 'Todos';
+let filtroPropBusca = '';
+
+function setFiltroTipoProp(tipo) {
+  filtroPropTipo = tipo;
+  document.querySelectorAll('.pchip').forEach(c =>
+    c.classList.toggle('active', c.textContent === tipo));
+  filtrarPropriedades();
+}
+
+function filtrarPropriedades() {
+  filtroPropBusca = (document.getElementById('propSearchInput').value || '').toLowerCase().trim();
+  renderizarPropriedades();
+}
+
 // ---- Renderizar grid ----
 function renderizarPropriedades() {
   const grid  = document.getElementById("props-grid");
@@ -1049,6 +1064,12 @@ function renderizarPropriedades() {
   if (empty) empty.style.display = "none";
   grid.style.display = "grid";
 
+  // Monta chips de tipo
+  const tipos = ['Todos', ...new Set(propriedades.map(p => p.tipo).filter(Boolean))];
+  document.getElementById('propsChipsTipo').innerHTML = tipos.map(t =>
+    `<button class="pchip${t === filtroPropTipo ? ' active' : ''}" onclick="setFiltroTipoProp('${t}')">${t}</button>`
+  ).join('');
+
   const tipoClasses = {
     "Casa":      "prop-tipo-casa",
     "Cobertura": "prop-tipo-cobertura",
@@ -1056,7 +1077,17 @@ function renderizarPropriedades() {
     "Terreno":   "prop-tipo-terreno",
   };
 
-  grid.innerHTML = propriedades.map((p, i) => {
+  // Aplica filtros
+  let lista = propriedades;
+  if (filtroPropTipo !== 'Todos') lista = lista.filter(p => p.tipo === filtroPropTipo);
+  if (filtroPropBusca) lista = lista.filter(p =>
+    [p.titulo, p.bairro, p.cidade, p.endereco, p.descricao, p.tipo]
+      .some(v => v && v.toLowerCase().includes(filtroPropBusca))
+  );
+
+  grid.innerHTML = lista.map((p, i) => {
+    // Índice original para editar/excluir/disparar
+    const origIdx = propriedades.indexOf(p);
     const tipoClass = tipoClasses[p.tipo] || "";
     const fotos = Array.isArray(p.fotos) && p.fotos.length ? p.fotos
                   : (p.foto ? [p.foto] : []);  // compatibilidade com registros antigos
@@ -1110,13 +1141,13 @@ function renderizarPropriedades() {
           <div class="prop-footer">
             <span class="prop-preco">${formatarPreco(p.preco)}</span>
             <div class="prop-actions">
-              <button class="btn-icon btn-icon-edit" onclick="abrirFormProp(${i})" title="Editar">
+              <button class="btn-icon btn-icon-edit" onclick="abrirFormProp(${origIdx})" title="Editar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
-              <button class="btn-icon btn-icon-del" onclick="confirmarRemoverProp(${i})" title="Remover">
+              <button class="btn-icon btn-icon-del" onclick="confirmarRemoverProp(${origIdx})" title="Remover">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               </button>
-              <button class="btn btn-primary btn-sm-icon" onclick="abrirModalDisparo(${i})" style="font-size:.77rem;padding:6px 11px;gap:5px">
+              <button class="btn btn-primary btn-sm-icon" onclick="abrirModalDisparo(${origIdx})" style="font-size:.77rem;padding:6px 11px;gap:5px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 Disparar
               </button>

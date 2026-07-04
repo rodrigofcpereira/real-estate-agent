@@ -1731,6 +1731,44 @@ tbody tr:hover .row-actions { opacity: 1; }
 .props-empty svg  { opacity: .35; }
 
 /* Grid */
+/* ── Props search / filter ─────────────────────────── */
+.props-filtros {
+  padding: 12px 24px 16px;
+}
+.props-search {
+  display: flex; gap: 8px;
+  margin-bottom: 10px;
+}
+.props-search input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: .875rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--white);
+  outline: none;
+  transition: border-color .15s;
+}
+.props-search input:focus { border-color: var(--primary); }
+.props-search input::placeholder { color: var(--text-light); }
+.props-chips {
+  display: flex; gap: 7px; flex-wrap: wrap;
+}
+.pchip {
+  padding: 5px 13px;
+  border-radius: 99px;
+  border: 1.5px solid var(--border);
+  background: var(--white);
+  font-size: .76rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+  font-family: inherit;
+}
+.pchip:hover { border-color: var(--primary); color: var(--primary); }
+.pchip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
 .props-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
