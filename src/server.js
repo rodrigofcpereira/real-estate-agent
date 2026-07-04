@@ -168,13 +168,14 @@ async function iniciarWhatsApp() {
         "--disable-background-networking",
         "--disable-ipc-flooding-protection",
         "--no-first-run",
-        "--js-flags=--max-old-space-size=256",
-        "--shm-size=256mb"
+        "--no-zygote",                               // evita processo zygote – boot mais rápido
+        "--disable-background-timer-throttling",     // evita throttle de timers em segundo plano
+        "--disable-renderer-backgrounding",          // mantém renderer ativo mesmo em background
+        "--disable-backgrounding-occluded-windows",  // evita throttle de janelas ocultas
+        "--js-flags=--max-old-space-size=512",       // mais heap V8 → carrega WA Web mais rápido
       ],
-      timeout: 120000,
-      // protocolTimeout: tempo máximo para cada chamada CDP (sendMessage, evaluate, etc.)
-      // Default é 30s — e2-micro é lento demais para isso
-      protocolTimeout: 120000
+      timeout: 300000,        // 5 min – VPS é lento no boot
+      protocolTimeout: 300000 // 5 min – evita timeout em chamadas CDP longas
     };
 
     if (process.env.CHROMIUM_PATH) {
@@ -191,8 +192,8 @@ async function iniciarWhatsApp() {
       authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || "./.wwebjs_auth" }),
       puppeteer: puppeteerOpts,
       // authTimeoutMs: tempo que o Chromium tem para injetar o JS do WhatsApp Web
-      // e2-micro é lento, 30s padrão é insuficiente → usa 120s na VPS
-      authTimeoutMs: isCloud ? 120000 : 45000,
+      // e2-micro é lento, 30s padrão é insuficiente → usa 300s na VPS
+      authTimeoutMs: isCloud ? 300000 : 60000,
       // 'local' = salva o WhatsApp Web no disco e reutiliza → mais rápido
       webVersionCache: { type: "local" },
       userAgent: process.platform === "win32"
@@ -222,9 +223,9 @@ async function iniciarWhatsApp() {
       whatsappStatus = "autenticado";
       io.emit("wa:status", { status: "autenticado", message: "Sessão autenticada, carregando WhatsApp..." });
 
-      // VPS lento precisa de mais tempo — usa 120s em produção, 45s local
+      // VPS lento precisa de mais tempo — usa 300s em produção, 60s local
       const isCloud = !process.env.ELECTRON_RUN_AS_NODE && process.platform === "linux";
-      const readyTimeoutMs = isCloud ? 120000 : 45000;
+      const readyTimeoutMs = isCloud ? 300000 : 60000;
 
       // Se "ready" não disparar no tempo limite, tenta reconectar automaticamente (1 vez)
       clienteWA._readyTimeout = setTimeout(async () => {
@@ -282,6 +283,26 @@ async function iniciarWhatsApp() {
       _cacheNumeros.clear(); // limpa cache ao desconectar para evitar dados velhos
       io.emit("wa:status", { status: "desconectado", message: reason });
       await destruirCliente();
+
+      if (reason === "LOGOUT") {
+        // Sessão revogada pelo celular – apaga arquivos locais para forçar novo QR
+        const sessionPath = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
+        try {
+          if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            logFile("🗑️  Sessão LOGOUT apagada – aguardando novo QR Code via painel.");
+          }
+        } catch (_) {}
+        io.emit("wa:status", { status: "erro", message: "Sessão encerrada no celular. Abra o painel e escaneie o QR Code." });
+      } else if (process.platform === "linux" && !iniciando) {
+        // Desconexão temporária na VPS – reconecta automaticamente em 20s
+        setTimeout(() => {
+          if (whatsappStatus === "desconectado" && !iniciando) {
+            logFile("🔄 Reconexão automática após desconexão temporária...");
+            iniciarWhatsApp();
+          }
+        }, 20000);
+      }
     });
 
     await clienteWA.initialize();
