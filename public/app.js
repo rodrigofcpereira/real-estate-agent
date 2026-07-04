@@ -1419,6 +1419,14 @@ function gerarMensagemProp(prop) {
   linhas.push('');
   linhas.push('📞 Entre em contato com *Tech Corretor* para mais informações!');
 
+  // Link de fotos — append apenas se a propriedade já tem ID no Firestore
+  const propId = prop._firestoreId || prop.id;
+  const temFotos = (Array.isArray(prop.fotos) && prop.fotos.length > 0) || !!prop.foto;
+  if (propId && temFotos) {
+    linhas.push('');
+    linhas.push(`📸 *Ver fotos:* https://tech-corretor.web.app/imovel?id=${propId}`);
+  }
+
   return linhas.join('\n');
 }
 
@@ -1486,74 +1494,97 @@ async function montarColagem(fotos) {
 
   if (urls.length === 0) return [];
 
-  const loadImg = src => new Promise(resolve => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload  = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
+  // Para HTTPS (Firebase Storage), faz fetch → blob → objectURL para evitar
+  // que o canvas fique "tainted" e impeça o toDataURL().
+  const blobUrls = [];
+  const loadImg = async src => {
+    try {
+      if (src.startsWith('http')) {
+        const res = await fetch(src);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrls.push(blobUrl);
+        src = blobUrl;
+      }
+      return await new Promise(resolve => {
+        const img = new Image();
+        img.onload  = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    } catch(e) {
+      return null;
+    }
+  };
 
   const MAX  = 9;
   const imgs = await Promise.all(urls.slice(0, MAX).map(loadImg));
   const validas = imgs.filter(Boolean);
 
-  if (validas.length === 0) return [];
-
-  if (validas.length === 1) {
-    const img = validas[0];
-    const cv  = document.createElement('canvas');
-    const MAX_SIDE = 1200;
-    const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-    cv.width  = Math.round((img.naturalWidth  || 800) * scale);
-    cv.height = Math.round((img.naturalHeight || 600) * scale);
-    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    try { return [cv.toDataURL('image/jpeg', 0.88)]; } catch(e) { return []; }
-  }
-
-  const n = validas.length;
-  const cols = n === 2 ? 2 : n <= 4 ? 2 : 3;
-  const rows = Math.ceil(n / cols);
-
-  const CELL = 400;
-  const GAP  = 4;
-  const cv   = document.createElement('canvas');
-  cv.width   = cols * CELL + (cols - 1) * GAP;
-  cv.height  = rows * CELL + (rows - 1) * GAP;
-
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#111111';
-  ctx.fillRect(0, 0, cv.width, cv.height);
-
-  validas.forEach((img, i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x   = col * (CELL + GAP);
-    const y   = row * (CELL + GAP);
-    const iw = img.naturalWidth  || 800;
-    const ih = img.naturalHeight || 600;
-    const sc = Math.max(CELL / iw, CELL / ih);
-    ctx.drawImage(img,
-      (iw - CELL / sc) / 2, (ih - CELL / sc) / 2, CELL / sc, CELL / sc,
-      x, y, CELL, CELL
-    );
-    if (i === MAX - 1 && urls.length > MAX) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(x, y, CELL, CELL);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.round(CELL * 0.3)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`+${urls.length - MAX}`, x + CELL / 2, y + CELL / 2);
-    }
-  });
-
-  try {
-    return [cv.toDataURL('image/jpeg', 0.85)];
-  } catch(e) {
-    console.warn('[colagem] toDataURL falhou (CORS?):', e.message);
+  if (validas.length === 0) {
+    blobUrls.forEach(u => URL.revokeObjectURL(u));
     return [];
   }
+
+  let resultado = [];
+
+  try {
+    if (validas.length === 1) {
+      const img = validas[0];
+      const cv  = document.createElement('canvas');
+      const MAX_SIDE = 1200;
+      const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      cv.width  = Math.round((img.naturalWidth  || 800) * scale);
+      cv.height = Math.round((img.naturalHeight || 600) * scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      resultado = [cv.toDataURL('image/jpeg', 0.88)];
+    } else {
+      const n    = validas.length;
+      const cols = n === 2 ? 2 : n <= 4 ? 2 : 3;
+      const rows = Math.ceil(n / cols);
+      const CELL = 400;
+      const GAP  = 4;
+      const cv   = document.createElement('canvas');
+      cv.width   = cols * CELL + (cols - 1) * GAP;
+      cv.height  = rows * CELL + (rows - 1) * GAP;
+
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#111111';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      validas.forEach((img, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x   = col * (CELL + GAP);
+        const y   = row * (CELL + GAP);
+        const iw  = img.naturalWidth  || 800;
+        const ih  = img.naturalHeight || 600;
+        const sc  = Math.max(CELL / iw, CELL / ih);
+        ctx.drawImage(img,
+          (iw - CELL / sc) / 2, (ih - CELL / sc) / 2, CELL / sc, CELL / sc,
+          x, y, CELL, CELL
+        );
+        if (i === MAX - 1 && urls.length > MAX) {
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(x, y, CELL, CELL);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${Math.round(CELL * 0.3)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`+${urls.length - MAX}`, x + CELL / 2, y + CELL / 2);
+        }
+      });
+      resultado = [cv.toDataURL('image/jpeg', 0.85)];
+    }
+  } catch(e) {
+    console.warn('[colagem] canvas falhou, enviando URLs diretas:', e.message);
+    resultado = urls.slice(0, MAX); // fallback: backend baixa as URLs diretamente
+  } finally {
+    blobUrls.forEach(u => URL.revokeObjectURL(u));
+  }
+
+  return resultado;
 }
 
 async function dispararPropriedade() {
@@ -1571,11 +1602,7 @@ async function dispararPropriedade() {
   if (propIdx >= 0) {
     const prop = propriedades[propIdx];
     titulo = `📤 Disparo: ${prop.titulo}`;
-    const fotosRaw = Array.isArray(prop.fotos) && prop.fotos.length
-      ? prop.fotos : (prop.foto ? [prop.foto] : []);
-    if (fotosRaw.length > 0) {
-      fotos = await montarColagem(fotosRaw);
-    }
+    // Fotos são enviadas via link na mensagem — gerarMensagemProp já incluiu a URL
   } else if (msgTipo) {
     titulo = msgTipo.titulo;
   } else {

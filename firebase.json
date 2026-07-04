@@ -21,6 +21,10 @@
         "destination": "/download.html"
       },
       {
+        "source": "/imovel",
+        "destination": "/imovel.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

@@ -377,12 +377,32 @@ async function resolverNumero(telefone) {
   return null;
 }
 
-// ---- Utilitário: construir MessageMedia a partir de dataURL base64 ----
+// ---- Utilitário: construir MessageMedia a partir de dataURL base64 ou URL HTTPS ----
 function dataURLparaMedia(dataURL, nomeArquivo = "imovel.jpg") {
   // Formato esperado: "data:<mimetype>;base64,<dados>"
   const match = dataURL.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
   return new MessageMedia(match[1], match[2], nomeArquivo);
+}
+
+// Suporta tanto data URLs (base64) quanto URLs HTTPS do Firebase Storage
+async function processarMedia(fotoInput, nomeArquivo = "imovel.jpg") {
+  if (typeof fotoInput !== 'string' || !fotoInput) return null;
+
+  // URL HTTPS → baixa o arquivo e converte para MessageMedia
+  if (fotoInput.startsWith('http')) {
+    try {
+      const media = await MessageMedia.fromUrl(fotoInput, { unsafeMime: true });
+      if (media) media.filename = nomeArquivo;
+      return media;
+    } catch(e) {
+      logFile(`⚠️ Falha ao baixar foto via URL (${nomeArquivo}): ${e.message}`);
+      return null;
+    }
+  }
+
+  // data URL base64
+  return dataURLparaMedia(fotoInput, nomeArquivo);
 }
 
 // ---- API: Enviar mensagem ----
@@ -422,11 +442,12 @@ app.post("/api/send-batch", async (req, res) => {
     return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
   }
 
-  // Pré-converte todas as mídias uma única vez
+  // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
-  const medias = fotosArray
-    .map((f, i) => dataURLparaMedia(f, `imovel_${i + 1}.jpg`))
-    .filter(Boolean);
+  const mediasRaw = await Promise.all(
+    fotosArray.map((f, i) => processarMedia(f, `imovel_${i + 1}.jpg`))
+  );
+  const medias = mediasRaw.filter(Boolean);
 
   // Dispara em sequência (mais estável no VPS com pouca RAM)
   const resultados = [];

@@ -1,5 +1,12 @@
 rules_version = '2';
-service cloud.firestore {
+service     // ── Propriedades ──────────────────────────────────────────────────
+    // Leitura pública: clientes recebem link via WhatsApp e precisam
+    // ver os dados sem estar autenticados.
+    // Escrita restrita a usuários autenticados.
+    match /propriedades/{propriedadeId} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }.firestore {
   match /databases/{database}/documents {
 
     // ── Usuários ─────────────────────────────────────────────────────────────
