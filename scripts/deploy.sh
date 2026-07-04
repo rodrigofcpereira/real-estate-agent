@@ -89,6 +89,9 @@ if [ "$SKIP_BUILD" = false ]; then
 
   if [ "$BUILD_MAC" = true ]; then
     section "Build macOS (.dmg)"
+    log "Limpando artefatos macOS anteriores..."
+    rm -f  "$DIST_DIR/Tech Corretor.dmg" "$DIST_DIR/Tech Corretor.dmg.blockmap"
+    rm -rf "$DIST_DIR/mac" "$DIST_DIR/mac-arm64"
     npm run dist:mac
     DMG_FILE=$(find "$DIST_DIR" -name "Tech Corretor.dmg" | head -1)
     [ -f "$DMG_FILE" ] || err "Tech Corretor.dmg não encontrado em $DIST_DIR"
@@ -97,6 +100,10 @@ if [ "$SKIP_BUILD" = false ]; then
 
   if [ "$BUILD_WIN" = true ]; then
     section "Build Windows (.exe)"
+    log "Limpando artefatos Windows anteriores..."
+    rm -f  "$DIST_DIR/Tech Corretor.exe" "$DIST_DIR/Tech Corretor.exe.blockmap"
+    rm -rf "$DIST_DIR/win-unpacked" "$DIST_DIR/win-arm64-unpacked"
+    rm -f  "$DIST_DIR/"*Setup*.exe "$DIST_DIR/"*Setup*.exe.blockmap
     npm run dist:win
     EXE_FILE=$(find "$DIST_DIR" -maxdepth 1 -name "Tech Corretor.exe" | head -1)
     [ -f "$EXE_FILE" ] || err "Tech Corretor.exe não encontrado em $DIST_DIR"
@@ -140,6 +147,10 @@ section "Atualizando site de download"
 # Garante que o index.html do public/ está atualizado com o do projeto
 cp src/index.html "$PUBLIC_DIR/index.html"
 ok "public/index.html sincronizado"
+
+# Garante que o script de limpeza do Windows está atualizado no site
+cp scripts/limpar-windows.bat "$PUBLIC_DIR/limpar-windows.bat"
+ok "public/limpar-windows.bat sincronizado"
 
 # ── Deploy Firebase Hosting ──────────────────────────────────
 section "Deploy Firebase Hosting"
