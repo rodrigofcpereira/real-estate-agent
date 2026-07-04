@@ -21,8 +21,8 @@
         "destination": "/download.html"
       },
       {
-        "source": "/imovel",
-        "destination": "/imovel.html"
+        "source": "/imoveis",
+        "destination": "/imoveis.html"
       },
       {
         "source": "**",

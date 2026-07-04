@@ -1472,7 +1472,7 @@ function gerarMensagemProp(prop) {
   const temFotos = (Array.isArray(prop.fotos) && prop.fotos.length > 0) || !!prop.foto;
   if (propId && temFotos) {
     linhas.push('');
-    linhas.push(`📸 *Ver fotos:* https://tech-corretor.web.app/imovel?id=${propId}`);
+    linhas.push(`📸 *Ver fotos:* https://tech-corretor.web.app/imoveis?id=${propId}`);
   }
 
   return linhas.join('\n');
