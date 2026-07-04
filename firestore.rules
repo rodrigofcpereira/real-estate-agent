@@ -1,46 +1,32 @@
 rules_version = '2';
-service     // ── Propriedades ──────────────────────────────────────────────────
-    // Leitura pública: clientes recebem link via WhatsApp e precisam
-    // ver os dados sem estar autenticados.
-    // Escrita restrita a usuários autenticados.
-    match /propriedades/{propriedadeId} {
-      allow read:  if true;
-      allow write: if request.auth != null;
-    }.firestore {
+service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Usuários ─────────────────────────────────────────────────────────────
-    // Cada usuário só lê e atualiza o próprio documento.
-    // Campos administrativos (expiresAt, storageLimit) são protegidos:
-    // não podem ser alterados pelo cliente — somente via Console / Admin SDK.
+    // ── Usuários ──────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if request.auth != null
                   && request.auth.uid == userId;
-
-      // Permite atualizar storageUsed e outros campos não-administrativos
       allow update: if request.auth != null
                     && request.auth.uid == userId
                     && !request.resource.data.diff(resource.data)
                          .affectedKeys()
                          .hasAny(['expiresAt', 'storageLimit']);
-
-      // Criação e exclusão somente via Console / Admin SDK
       allow create, delete: if false;
     }
 
     // ── Clientes ──────────────────────────────────────────────────────────────
-    // Qualquer usuário autenticado pode criar, ler, atualizar e excluir.
     match /clientes/{clienteId} {
       allow read, write: if request.auth != null;
     }
 
     // ── Propriedades ──────────────────────────────────────────────────────────
-    // Qualquer usuário autenticado pode criar, ler, atualizar e excluir.
+    // Leitura pública: clientes recebem link via WhatsApp e acessam sem login.
     match /propriedades/{propriedadeId} {
-      allow read, write: if request.auth != null;
+      allow read:  if true;
+      allow write: if request.auth != null;
     }
 
-    // ── Negar tudo que não se encaixa nas regras acima ────────────────────────
+    // ── Negar tudo o mais ─────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
