@@ -61,11 +61,14 @@
       "icon": null
     },
     "nsis": {
+      "guid": "A7F3C2E1-9B4D-4A6E-8C1F-2D5B7E903F4A",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Tech Corretor",
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "differentialPackage": false,
+      "deleteAppDataOnUninstall": false
     },
     "asar": true,
     "asarUnpack": []

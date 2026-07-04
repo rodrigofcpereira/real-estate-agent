@@ -26,14 +26,26 @@ if (!gotTheLock) {
   });
 
   // ── Funções auxiliares ───────────────────────────────────────────────────
-  function findFreePort() {
+
+  // Tenta sempre a porta preferida (3000) para que a origem http://localhost:3000
+  // seja consistente entre reinicializações — necessário para o Firebase Auth
+  // persistir a sessão no IndexedDB sem pedir login toda vez.
+  function findPreferredPort(preferred = 3000) {
     return new Promise((resolve, reject) => {
-      const server = net.createServer();
-      server.unref();
-      server.on("error", reject);
-      server.listen(0, () => {
-        const port = server.address().port;
-        server.close(() => resolve(port));
+      const probe = net.createServer();
+      probe.unref();
+      probe.once("error", () => {
+        // Porta preferida ocupada → pega qualquer porta livre como fallback
+        const fallback = net.createServer();
+        fallback.unref();
+        fallback.on("error", reject);
+        fallback.listen(0, () => {
+          const port = fallback.address().port;
+          fallback.close(() => resolve(port));
+        });
+      });
+      probe.listen(preferred, () => {
+        probe.close(() => resolve(preferred));
       });
     });
   }
@@ -102,7 +114,7 @@ if (!gotTheLock) {
   function startServer() {
     return new Promise(async (resolve, reject) => {
       try {
-        serverPort = await findFreePort();
+        serverPort = await findPreferredPort(3000);
       } catch (err) {
         return reject(new Error("Não foi possível encontrar uma porta livre"));
       }

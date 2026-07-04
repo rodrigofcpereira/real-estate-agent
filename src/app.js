@@ -624,10 +624,12 @@ function iniciarSocket() {
     socket.on("wa:status", (data) => {
       atualizarStatusWA(data.status, data.message);
 
-      // Auto-conectar: tenta conectar automaticamente ao carregar
+      // Auto-conectar: só aciona se estiver totalmente desconectado ou com erro.
+      // Se o servidor já iniciou o WhatsApp automaticamente (conectando/autenticado),
+      // não envia wa:iniciar de novo para evitar chamadas duplicadas.
       if (!window._waAutoConnectDone) {
         window._waAutoConnectDone = true;
-        if (data.status !== "pronto") {
+        if (data.status === "desconectado" || data.status === "erro") {
           socket.emit("wa:iniciar");
         }
       }

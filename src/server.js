@@ -193,11 +193,8 @@ async function iniciarWhatsApp() {
       // authTimeoutMs: tempo que o Chromium tem para injetar o JS do WhatsApp Web
       // e2-micro é lento, 30s padrão é insuficiente → usa 120s na VPS
       authTimeoutMs: isCloud ? 120000 : 45000,
-      // 'local' = salva o WhatsApp Web no disco e reutiliza → muito mais rápido no VPS
-      // 'none'  = baixa do zero toda vez (lento)
-      webVersionCache: isCloud
-        ? { type: "local" }    // VPS: usa cache para não baixar toda vez
-        : { type: "none" },    // Mac/Win local: sempre pega versão atual
+      // 'local' = salva o WhatsApp Web no disco e reutiliza → mais rápido
+      webVersionCache: { type: "local" },
       userAgent: process.platform === "win32"
         ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -522,4 +519,24 @@ server.listen(PORT, () => {
   console.log(`\n🚀 Servidor Tech Corretor rodando em http://localhost:${PORT}`);
   console.log("📋 Abra o navegador e use o painel normalmente.");
   console.log("📱 Clique em 'Conectar WhatsApp' para escanear o QR Code.\n");
+
+  // ── Auto-reconectar WhatsApp se já existe sessão salva ──────────────────
+  // Comportamento idêntico ao da VPS: o servidor sempre tenta reconectar
+  // automaticamente ao iniciar, sem precisar que o frontend acione o botão.
+  // Só inicia se houver pasta de sessão com conteúdo (evita QR desnecessário).
+  const sessionBase = process.env.WA_SESSION_PATH || path.join(__dirname, "..", ".wwebjs_auth");
+  let temSessao = false;
+  try {
+    if (fs.existsSync(sessionBase)) {
+      temSessao = fs.readdirSync(sessionBase).length > 0;
+    }
+  } catch (_) {}
+
+  if (temSessao) {
+    logFile("🔄 Sessão encontrada – reconectando WhatsApp automaticamente...");
+    // Pequeno delay para o servidor terminar de subir antes de abrir o Chrome
+    setTimeout(() => iniciarWhatsApp(), 3000);
+  } else {
+    logFile("ℹ️  Nenhuma sessão encontrada – aguardando conexão manual.");
+  }
 });

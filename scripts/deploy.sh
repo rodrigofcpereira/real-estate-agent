@@ -115,7 +115,7 @@ section "Upload para Firebase Storage"
 if [ "$BUILD_MAC" = true ] || [ "$SKIP_BUILD" = true ]; then
   if [ -n "${DMG_FILE:-}" ] && [ -f "$DMG_FILE" ]; then
     log "Enviando DMG... ($(du -sh "$DMG_FILE" | cut -f1))"
-    gsutil cp "$DMG_FILE" "$BUCKET/$DMG_NAME"
+    gsutil -h "Content-Type:application/x-apple-diskimage" cp "$DMG_FILE" "$BUCKET/$DMG_NAME"
     gsutil acl ch -u AllUsers:R "$BUCKET/$DMG_NAME"
     ok "DMG publicado → $DMG_URL"
   else
@@ -126,7 +126,7 @@ fi
 if [ "$BUILD_WIN" = true ] || [ "$SKIP_BUILD" = true ]; then
   if [ -n "${EXE_FILE:-}" ] && [ -f "$EXE_FILE" ]; then
     log "Enviando EXE... ($(du -sh "$EXE_FILE" | cut -f1))"
-    gsutil cp "$EXE_FILE" "$BUCKET/$EXE_NAME"
+    gsutil -h "Content-Type:application/octet-stream" cp "$EXE_FILE" "$BUCKET/$EXE_NAME"
     gsutil acl ch -u AllUsers:R "$BUCKET/$EXE_NAME"
     ok "EXE publicado → $EXE_URL"
   else
