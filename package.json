@@ -31,15 +31,6 @@
     "extraMetadata": {
       "main": "src/main.js"
     },
-    "extraResources": [
-      {
-        "from": "resources/chromium",
-        "to": "chromium",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "mac": {
       "category": "public.app-category.business",
       "artifactName": "Tech Corretor.dmg",
@@ -50,7 +41,16 @@
       "identity": null,
       "sign": false,
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extraResources": [
+        {
+          "from": "resources/chromium",
+          "to": "chromium",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "win": {
       "executableName": "TechCorretor",

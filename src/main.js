@@ -179,11 +179,18 @@ if (!gotTheLock) {
       minWidth: 900,
       minHeight: 600,
       title: "Tech Corretor",
+      show: false,               // não exibe até o conteúdo estar pronto
+      backgroundColor: "#f4f6fb", // evita flash branco enquanto carrega
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         zoomFactor: 1.0,
       },
+    });
+
+    // Exibe a janela apenas quando a página estiver totalmente renderizada
+    mainWindow.once("ready-to-show", () => {
+      mainWindow.show();
     });
 
     // Corrige DPI scaling no Windows (evita layout borrado/quebrado em telas 150%)
