@@ -395,6 +395,9 @@ function abrirModalMensagemDirect() {
     </label>`).join('');
 
   atualizarContadorDisparo();
+  // Limpa busca anterior ao abrir o modal
+  const buscaInput = document.getElementById("disparo-busca");
+  if (buscaInput) buscaInput.value = "";
   document.getElementById("modalDisparo").style.display = "flex";
 }
 
@@ -809,6 +812,10 @@ async function limparSessaoWA() {
 
 // ---- Aplicar sugestão de mensagem (menu horizontal) ----
 function aplicarSugestao(tipo) {
+  // Limpa busca ao trocar de sugestão
+  const buscaInput = document.getElementById("disparo-busca");
+  if (buscaInput) buscaInput.value = "";
+
   const h = hoje();
   let clientes = [], msgFn = () => "";
   const titulos = {
@@ -1549,6 +1556,9 @@ function abrirModalDisparoDirect(idx) {
     </label>`).join('');
 
   atualizarContadorDisparo();
+  // Limpa busca anterior ao abrir o modal
+  const buscaInput = document.getElementById("disparo-busca");
+  if (buscaInput) buscaInput.value = "";
   document.getElementById("modalDisparo").style.display = "flex";
 }
 
@@ -1609,8 +1619,30 @@ function renderizarPreviewMidias() {
 }
 
 function selecionarTodosClientes(sel) {
-  document.querySelectorAll(".disparo-check").forEach(cb => cb.checked = sel);
+  // Seleciona/deseleciona apenas os itens VISÍVEIS (não filtrados)
+  document.querySelectorAll(".disparo-item").forEach(item => {
+    if (item.style.display !== "none") {
+      const cb = item.querySelector(".disparo-check");
+      if (cb) cb.checked = sel;
+    }
+  });
   atualizarContadorDisparo();
+}
+
+function filtrarDestinatarios() {
+  const termo = (document.getElementById("disparo-busca")?.value || "").toLowerCase().trim();
+  const itens = document.querySelectorAll(".disparo-item");
+
+  itens.forEach(item => {
+    if (!termo) {
+      item.style.display = "";
+      return;
+    }
+    const nome = (item.querySelector(".disparo-item-nome")?.textContent || "").toLowerCase();
+    const sub = (item.querySelector(".disparo-item-sub")?.textContent || "").toLowerCase();
+    const match = nome.includes(termo) || sub.includes(termo);
+    item.style.display = match ? "" : "none";
+  });
 }
 
 function atualizarContadorDisparo() {

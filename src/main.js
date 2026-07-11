@@ -10,6 +10,11 @@ let mainWindow = null;
 let serverPort = null;
 let serverReady = false;
 
+// ── Evita flash branco no Windows ao criar a janela ──────────────────────────
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+}
+
 // ── Garante UMA única instância ──────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -180,11 +185,13 @@ if (!gotTheLock) {
       minHeight: 600,
       title: "Tech Corretor",
       show: false,               // não exibe até o conteúdo estar pronto
+      paintWhenInitiallyHidden: true, // renderiza o conteúdo mesmo oculta
       backgroundColor: "#f4f6fb", // evita flash branco enquanto carrega
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         zoomFactor: 1.0,
+        backgroundThrottling: false, // não reduz prioridade de render enquanto oculta
       },
     });
 

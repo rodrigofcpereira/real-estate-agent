@@ -11,6 +11,7 @@ const path       = require("path");
 const fs         = require("fs");
 const qrcode     = require("qrcode");
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
+const antiBan = require("./anti-ban");
 
 // ---- Evita que erros do Puppeteer/Chrome derrubem o processo ----
 process.on("uncaughtException", (err) => {
@@ -468,6 +469,12 @@ app.post("/api/send", async (req, res) => {
     return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
   }
 
+  // ── Anti-ban: verificar se pode enviar ──
+  const verificacao = antiBan.podeEnviar();
+  if (!verificacao.permitido) {
+    return res.status(429).json({ ok: false, erro: verificacao.motivo });
+  }
+
   const resolvido = await resolverNumero(telefone);
   if (!resolvido) {
     return res.status(404).json({ ok: false, erro: `Número ${telefone} não encontrado no WhatsApp` });
@@ -478,16 +485,27 @@ app.post("/api/send", async (req, res) => {
   const medias = mediasRaw.filter(Boolean);
 
   try {
+    // ── Anti-ban: simular digitação antes de enviar ──
+    await antiBan.simularDigitacao(clienteWA, resolvido.chatId);
+
+    // ── Anti-ban: variar texto para não repetir mensagens idênticas ──
+    const mensagemFinal = antiBan.variarTexto(mensagem);
+
     if (medias.length === 0) {
-      await clienteWA.sendMessage(resolvido.chatId, mensagem);
+      await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
     } else if (medias.length === 1) {
-      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagem || "" });
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal || "" });
     } else {
-      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagem || "" });
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal || "" });
       for (let i = 1; i < medias.length; i++) {
+        await antiBan.sleep(antiBan.delayHumanizado(1500, 3000)); // delay entre mídias
         await clienteWA.sendMessage(resolvido.chatId, medias[i]);
       }
     }
+
+    // ── Anti-ban: registrar envio nos contadores ──
+    antiBan.registrarEnvio();
+
     console.log(`📤 Mensagem enviada para ${resolvido.numero} (${medias.length} mídia(s))`);
     res.json({ ok: true, numero: resolvido.numero });
   } catch (err) {
@@ -507,6 +525,12 @@ app.post("/api/send-batch", async (req, res) => {
     return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
   }
 
+  // ── Anti-ban: verificar se pode enviar antes de iniciar o lote ──
+  const verificacao = antiBan.podeEnviar();
+  if (!verificacao.permitido) {
+    return res.status(429).json({ ok: false, erro: verificacao.motivo });
+  }
+
   // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
   const mediasRaw = await Promise.all(
@@ -514,9 +538,25 @@ app.post("/api/send-batch", async (req, res) => {
   );
   const medias = mediasRaw.filter(Boolean);
 
-  // Dispara em sequência (mais estável no VPS com pouca RAM)
+  // Dispara em sequência com delays humanizados (anti-ban)
   const resultados = [];
-  for (const item of mensagens) {
+  for (let idx = 0; idx < mensagens.length; idx++) {
+    const item = mensagens[idx];
+
+    // ── Anti-ban: re-verificar limite a cada mensagem do lote ──
+    const check = antiBan.podeEnviar();
+    if (!check.permitido) {
+      // Marca restantes como não enviados
+      for (let j = idx; j < mensagens.length; j++) {
+        resultados.push({
+          numero: mensagens[j].telefone,
+          ok: false,
+          erro: check.motivo
+        });
+      }
+      break;
+    }
+
     let resolvido = null;
     try {
       resolvido = await resolverNumero(item.telefone || "");
@@ -535,16 +575,27 @@ app.post("/api/send-batch", async (req, res) => {
     }
 
     try {
+      // ── Anti-ban: simular digitação ──
+      await antiBan.simularDigitacao(clienteWA, resolvido.chatId);
+
+      // ── Anti-ban: variar texto para evitar mensagens idênticas ──
+      const mensagemFinal = antiBan.variarTexto(item.mensagem);
+
       if (medias.length === 0) {
-        await clienteWA.sendMessage(resolvido.chatId, item.mensagem);
+        await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
       } else if (medias.length === 1) {
-        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: item.mensagem });
+        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
       } else {
-        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: item.mensagem });
+        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
         for (let i = 1; i < medias.length; i++) {
+          await antiBan.sleep(antiBan.delayHumanizado(1500, 3000)); // delay entre mídias
           await clienteWA.sendMessage(resolvido.chatId, medias[i]);
         }
       }
+
+      // ── Anti-ban: registrar envio ──
+      antiBan.registrarEnvio();
+
       console.log(`📤 Enviado → ${resolvido.numero} (${medias.length} foto(s))`);
       resultados.push({ numero: resolvido.numero, ok: true });
     } catch (err) {
@@ -552,10 +603,11 @@ app.post("/api/send-batch", async (req, res) => {
       resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
     }
 
-    // Pausa entre mensagens: mais tempo na VPS lenta para não sobrecarregar o Chrome
-    if (mensagens.length > 1) {
-      const pausaMs = process.platform === "linux" ? 3000 : 1000;
-      await new Promise(r => setTimeout(r, pausaMs));
+    // ── Anti-ban: delay humanizado entre destinatários (substitui o delay fixo) ──
+    if (idx < mensagens.length - 1) {
+      const delay = antiBan.calcularDelay();
+      logFile(`⏳ Anti-ban: aguardando ${(delay / 1000).toFixed(1)}s antes do próximo envio...`);
+      await antiBan.sleep(delay);
     }
   }
 
@@ -564,6 +616,21 @@ app.post("/api/send-batch", async (req, res) => {
   console.log(`✅ Lote concluído: ${qtdOk} enviados, ${qtdErr} com erro`);
 
   res.json({ ok: true, resultados });
+});
+
+// ---- API: Status do anti-ban (monitorar limites no frontend) ----
+app.get("/api/anti-ban/status", (req, res) => {
+  res.json({ ok: true, ...antiBan.getStatus() });
+});
+
+// ---- API: Configurar anti-ban em tempo de execução ----
+app.post("/api/anti-ban/config", (req, res) => {
+  const campos = req.body;
+  if (!campos || typeof campos !== "object") {
+    return res.status(400).json({ ok: false, erro: "Body deve ser um objeto com os campos a atualizar" });
+  }
+  antiBan.atualizarConfig(campos);
+  res.json({ ok: true, config: antiBan.getConfig() });
 });
 
 // ---- API: Limpar sessão (use quando 'ready' nunca dispara) ----
