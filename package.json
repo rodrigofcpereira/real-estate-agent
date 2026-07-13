@@ -21,6 +21,7 @@
       "src/main.js",
       "src/server.js",
       "src/app.js",
+      "src/anti-ban.js",
       "src/auth.js",
       "src/firebase.js",
       "src/app.html",

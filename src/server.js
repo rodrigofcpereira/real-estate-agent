@@ -158,6 +158,13 @@ async function iniciarWhatsApp() {
     const puppeteerOpts = {
       headless: true,
       args: [
+        // "--headless=new" explícito: quando usamos executablePath customizado
+        // (Chrome/Edge do sistema no Windows), o Puppeteer às vezes não consegue
+        // detectar automaticamente a flag de headless correta para esse binário
+        // e a opção `headless: true` sozinha é ignorada — o Chrome/Edge abre
+        // então uma janela visível (em branco, pois roda sem UI própria).
+        // Passar a flag manualmente garante que o navegador nunca fique visível.
+        "--headless=new",
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
@@ -177,6 +184,9 @@ async function iniciarWhatsApp() {
         "--renderer-process-limit=1",                // só 1 renderer → economiza ~100MB RAM
         "--disk-cache-size=52428800",                // cache de disco máx 50MB (padrão ~320MB)
         "--js-flags=--max-old-space-size=192",       // heap V8 máx 192MB (1GB VPS tem 193MB livres)
+        // Fallback extra: caso algum flag conflitante force uma janela visível,
+        // posiciona-a fora da área da tela para o usuário nunca vê-la.
+        "--window-position=-32000,-32000",
       ],
       timeout: 300000,        // 5 min – VPS é lento no boot
       protocolTimeout: 300000 // 5 min – evita timeout em chamadas CDP longas

@@ -10,11 +10,6 @@ let mainWindow = null;
 let serverPort = null;
 let serverReady = false;
 
-// ── Evita flash branco no Windows ao criar a janela ──────────────────────────
-if (process.platform === "win32") {
-  app.commandLine.appendSwitch("disable-gpu-compositing");
-}
-
 // ── Garante UMA única instância ──────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -176,6 +171,17 @@ if (!gotTheLock) {
     });
   }
 
+  // Cria a janela IMEDIATAMENTE (com tela de carregando própria) e só depois
+  // navega para o app real. Isso evita a "janela fantasma" branca que o
+  // Windows exibe quando um processo demora para criar sua primeira janela
+  // (o que acontecia aqui, pois startServer() esperava o WhatsApp/Puppeteer
+  // subir antes de qualquer BrowserWindow existir).
+  //
+  // show: true (em vez de false + ready-to-show) porque no Windows uma janela
+  // OCULTA que se torna visível de repente às vezes é pintada pelo DWM num
+  // tamanho de cache/padrão por 1 frame antes de aplicar as dimensões reais
+  // (efeito "tela pequena antes da tela grande"). Como já definimos
+  // backgroundColor, não há flash branco mesmo mostrando a janela de imediato.
   function createWindow() {
     if (mainWindow) return; // já existe uma janela
     mainWindow = new BrowserWindow({
@@ -184,41 +190,23 @@ if (!gotTheLock) {
       minWidth: 900,
       minHeight: 600,
       title: "Tech Corretor",
-      show: false,               // não exibe até o conteúdo estar pronto
-      paintWhenInitiallyHidden: true, // renderiza o conteúdo mesmo oculta
-      backgroundColor: "#f4f6fb", // evita flash branco enquanto carrega
+      show: true,
+      backgroundColor: "#f4f6fb",
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         zoomFactor: 1.0,
-        backgroundThrottling: false, // não reduz prioridade de render enquanto oculta
+        backgroundThrottling: false,
       },
     });
 
-    // Exibe a janela apenas quando a página estiver totalmente renderizada.
-    // Usa múltiplos gatilhos + timeout de segurança para NUNCA ficar oculta
-    // (no Windows o "ready-to-show" às vezes não dispara → janela fantasma).
-    let shown = false;
-    const showWindow = () => {
-      if (shown || !mainWindow) return;
-      shown = true;
-      mainWindow.show();
-      mainWindow.focus();
-    };
-
-    mainWindow.once("ready-to-show", showWindow);
-    mainWindow.webContents.once("did-finish-load", showWindow);
-    // Fallback final: força a exibição após 8s mesmo se algo falhar
-    const showFallback = setTimeout(showWindow, 8000);
-
-    // Se a página falhar ao carregar, mostra a janela mesmo assim (não deixa oculta)
-    mainWindow.webContents.on("did-fail-load", (_e, code, desc) => {
-      console.error(`[main] Falha ao carregar a página (${code}): ${desc}`);
-      showWindow();
-    });
+    // Tela de carregando própria (mesmas cores/fonte do app) exibida
+    // instantaneamente enquanto o servidor backend inicia.
+    const splashHTML = `data:text/html;charset=utf-8,<!DOCTYPE html><html><head><style>html,body{margin:0;padding:0;background:#f4f6fb;height:100%;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,sans-serif;}</style></head><body><div style="opacity:.6;font-size:14px;color:#6b7280;">Carregando Tech Corretor...</div></body></html>`;
+    mainWindow.loadURL(splashHTML);
+    mainWindow.focus();
 
     mainWindow.on("closed", () => {
-      clearTimeout(showFallback);
       mainWindow = null;
     });
 
@@ -226,19 +214,32 @@ if (!gotTheLock) {
     if (process.platform === "win32") {
       mainWindow.webContents.setZoomFactor(1.0);
       mainWindow.webContents.on("did-finish-load", () => {
-        mainWindow.webContents.setZoomFactor(1.0);
+        if (mainWindow) mainWindow.webContents.setZoomFactor(1.0);
       });
     }
+  }
 
+  // Navega a janela (já visível, com o splash) para o app real assim que o
+  // servidor backend estiver pronto.
+  function irParaApp() {
+    if (!mainWindow) return;
+    mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+      if (url && url.startsWith("http")) {
+        console.error(`[main] Falha ao carregar (${code}): ${desc}`);
+      }
+    });
     mainWindow.loadURL(`http://localhost:${serverPort}`);
   }
 
   // ── Inicialização ────────────────────────────────────────────────────────
+  // Cria a janela ANTES de iniciar o servidor (evita ghost window do Windows),
+  // depois espera o backend subir e só então navega para o conteúdo real.
   app.whenReady().then(async () => {
+    createWindow();
     try {
       await startServer();
       serverReady = true;
-      createWindow();
+      irParaApp();
     } catch (err) {
       dialog.showErrorBox("Erro", `Não foi possível iniciar o servidor:\n${err.message}`);
       app.quit();
@@ -255,6 +256,7 @@ if (!gotTheLock) {
   app.on("activate", () => {
     if (serverReady && mainWindow === null) {
       createWindow();
+      irParaApp(); // servidor já está pronto, navega direto para o app
     }
   });
 
