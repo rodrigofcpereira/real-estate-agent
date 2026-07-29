@@ -12,15 +12,21 @@
  * 5. Horário comercial (evita envios de madrugada)
  * 6. Variação de texto (quebra padrão de mensagem idêntica)
  * 7. Simulação de digitação (typing indicator)
+ * 8. Switch geral (ativo/inativo) — permite ao usuário desligar todas as
+ *    proteções acima quando quiser velocidade máxima, assumindo o risco.
  */
 
 // ── Configuração padrão (pode ser sobrescrita) ─────────────────────────────
+// Os limites de volume (diário/hora) são uma REDE DE SEGURANÇA — quem faz o
+// ritmo humano de verdade são os delays entre mensagens. Por isso os limites
+// aqui são generosos o suficiente para não serem o principal fator de espera
+// em disparos para uma base de clientes conhecidos (ex: 200 contatos).
 const CONFIG = {
-  // Limites de volume
-  limiteDiario: 200,          // máx mensagens por dia (conservador)
-  limitePorHora: 30,          // máx mensagens por hora (janela deslizante)
+  // Limites de volume (rede de segurança, não o ritmo principal)
+  limiteDiario: 400,          // máx mensagens por dia
+  limitePorHora: 150,         // máx mensagens por hora (janela deslizante)
 
-  // Delays entre mensagens (em ms)
+  // Delays entre mensagens (em ms) — isso é o que de fato "humaniza" o envio
   delayMin: 4000,             // mínimo 4s entre msgs
   delayMax: 12000,            // máximo 12s entre msgs
   delayEntreGrupos: 30000,    // pausa maior a cada N mensagens (30s)
@@ -47,6 +53,7 @@ let _diaAtual = new Date().toDateString();
 let _historicoHora = [];       // timestamps das msgs na última hora
 let _contadorSequencial = 0;   // msgs desde a última pausa longa
 let _ultimoEnvio = 0;         // timestamp do último envio
+let _ativo = true;            // switch geral: liga/desliga todas as proteções anti-ban
 
 // ── Funções utilitárias ─────────────────────────────────────────────────────
 
@@ -97,6 +104,9 @@ function limparHistoricoHora() {
  * Retorna { permitido: boolean, motivo?: string, aguardarMs?: number }
  */
 function podeEnviar() {
+  // Anti-ban desligado pelo usuário: envia sem nenhuma restrição de volume/horário
+  if (!_ativo) return { permitido: true };
+
   verificarResetDiario();
   limparHistoricoHora();
 
@@ -134,10 +144,41 @@ function podeEnviar() {
 }
 
 /**
+ * Espera até que o envio seja permitido de novo (usado quando o limite
+ * diário/hora foi atingido no meio de um lote). Chama onEspera(info) a cada
+ * verificação para o chamador poder informar o usuário do motivo da pausa.
+ * Retorna false se o limite for o DIÁRIO (nesse caso não há o que esperar
+ * dentro do mesmo dia — o chamador deve tratar como bloqueio definitivo).
+ */
+async function esperarLiberar(onEspera, intervaloChecagemMs = 15000) {
+  while (true) {
+    const check = podeEnviar();
+    if (check.permitido) return true;
+
+    // Limite diário ou fora do horário comercial: não há espera que resolva
+    // dentro de um prazo curto — devolve controle ao chamador decidir.
+    if (check.aguardarMs === null) {
+      if (typeof onEspera === "function") onEspera({ ...check, definitivo: true });
+      return false;
+    }
+
+    if (typeof onEspera === "function") onEspera({ ...check, definitivo: false });
+
+    // Espera em fatias pequenas (não o tempo total de uma vez) para permitir
+    // cancelamento e atualização de progresso durante a espera longa.
+    await sleep(Math.min(intervaloChecagemMs, check.aguardarMs));
+  }
+}
+
+/**
  * Calcula o delay ideal antes do próximo envio.
  * Leva em conta: tempo desde o último envio, pausa de grupo, delay base.
  */
 function calcularDelay() {
+  // Desligado: envia sem pausas entre mensagens (apenas um delay técnico
+  // mínimo para não sobrecarregar o Chromium/WhatsApp Web de uma vez)
+  if (!_ativo) return 300;
+
   _contadorSequencial++;
 
   // Pausa longa a cada N mensagens
@@ -166,6 +207,7 @@ function registrarEnvio() {
  * Torna o comportamento mais humano no WhatsApp do destinatário.
  */
 async function simularDigitacao(clienteWA, chatId) {
+  if (!_ativo) return; // desligado: pula a simulação de digitação
   try {
     const chat = await clienteWA.getChatById(chatId);
     if (chat) {
@@ -185,7 +227,7 @@ async function simularDigitacao(clienteWA, chatId) {
  * Usa caracteres invisíveis e variações de pontuação.
  */
 function variarTexto(texto) {
-  if (!CONFIG.variacaoTexto || !texto) return texto;
+  if (!_ativo || !CONFIG.variacaoTexto || !texto) return texto;
 
   let resultado = texto;
 
@@ -228,6 +270,7 @@ function getStatus() {
   limparHistoricoHora();
 
   return {
+    ativo: _ativo,
     contadorDiario: _contadorDiario,
     limiteDiario: CONFIG.limiteDiario,
     enviosUltimaHora: _historicoHora.length,
@@ -252,6 +295,24 @@ function atualizarConfig(novaConfig) {
 }
 
 /**
+ * Liga/desliga o anti-ban por completo. Quando desligado, todas as proteções
+ * (limites de volume, delays humanizados, digitação simulada, variação de
+ * texto e horário comercial) são ignoradas e as mensagens saem o mais rápido
+ * possível — o que aumenta bastante o risco de bloqueio pelo WhatsApp.
+ */
+function setAtivo(valor) {
+  _ativo = !!valor;
+  return _ativo;
+}
+
+/**
+ * Retorna true se o anti-ban está ativo.
+ */
+function isAtivo() {
+  return _ativo;
+}
+
+/**
  * Retorna a configuração atual.
  */
 function getConfig() {
@@ -260,6 +321,7 @@ function getConfig() {
 
 module.exports = {
   podeEnviar,
+  esperarLiberar,
   calcularDelay,
   registrarEnvio,
   simularDigitacao,
@@ -269,4 +331,6 @@ module.exports = {
   getStatus,
   getConfig,
   atualizarConfig,
+  setAtivo,
+  isAtivo,
 };

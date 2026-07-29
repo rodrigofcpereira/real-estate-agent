@@ -131,6 +131,16 @@
         </div>
       </div>
       <div class="topbar-right">
+        <div class="antiban-switch-wrap" title="Ativa proteções contra bloqueio do WhatsApp: delays humanizados, limites de volume e horário comercial">
+          <label class="antiban-switch">
+            <input type="checkbox" id="antiban-toggle" checked onchange="toggleAntiBan(this.checked)" />
+            <span class="antiban-switch-slider"></span>
+          </label>
+          <span class="antiban-switch-label">
+            <span class="antiban-switch-title">Controle de envios</span>
+            <span class="antiban-switch-state" id="antiban-switch-state">Ativado</span>
+          </span>
+        </div>
         <button class="btn btn-primary" onclick="abrirModalMensagem()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           Enviar mensagem
@@ -290,6 +300,7 @@
       <p id="modalTexto"></p>
       <div id="modalLista" class="modal-lista"></div>
       <div class="modal-footer">
+        <button class="btn btn-danger-outline" id="disparo-cancelar-btn" style="display:none;" onclick="cancelarDisparoAtual()">⏹️ Cancelar envio</button>
         <button class="btn btn-ghost" onclick="fecharModal()">Fechar</button>
       </div>
     </div>

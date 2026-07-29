@@ -1477,6 +1477,110 @@ tbody tr:hover .row-actions { opacity: 1; }
 }
 .btn-danger:hover { background: #b91c1c; }
 
+.btn-danger-outline {
+  background: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  margin-right: auto; /* empurra para a esquerda, "Fechar" fica à direita */
+}
+.btn-danger-outline:hover { background: #fef2f2; }
+
+/* ===== Switch Anti-ban (dashboard) ===== */
+.antiban-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--white);
+  border: 1px solid var(--border);
+}
+.antiban-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.antiban-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.antiban-switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #dc2626; /* vermelho = desligado (estado padrão visual antes do JS) */
+  border-radius: 999px;
+  transition: background-color .2s ease;
+}
+.antiban-switch-slider::before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform .2s ease;
+}
+.antiban-switch input:checked + .antiban-switch-slider {
+  background-color: #16a34a; /* verde = ligado (protegido) */
+}
+.antiban-switch input:checked + .antiban-switch-slider::before {
+  transform: translateX(16px);
+}
+.antiban-switch-label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.antiban-switch-title {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.antiban-switch-state {
+  font-size: .7rem;
+  font-weight: 500;
+  color: #16a34a; /* acompanha o estado via JS (ativado/desativado) */
+}
+.antiban-switch-state.off {
+  color: #dc2626;
+}
+
+@media (max-width: 768px) {
+  .antiban-switch-wrap { padding: 5px 8px; }
+  .antiban-switch-title { font-size: .72rem; }
+  .antiban-switch-state { font-size: .64rem; }
+}
+
+/* ===== Banner de status do disparo em lote (pausa anti-ban, cancelamento) ===== */
+.send-status-banner {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: .84rem;
+  line-height: 1.4;
+}
+.send-status-info {
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.send-status-warn {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.send-status-err {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
 @keyframes pulse-dot {
   0%, 100% { transform: scale(1); opacity: 1; }
   50%       { transform: scale(1.4); opacity: .6; }

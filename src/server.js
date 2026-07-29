@@ -75,6 +75,7 @@ let clienteWA      = null;
 let iniciando      = false; // trava para evitar chamadas simultâneas
 let _tentativasReconexao = 0; // contador de retentativas automáticas
 let _foiPronto = false;       // true somente se o WA chegou ao estado "pronto" com sessão válida
+let _prontoDesde = 0;         // timestamp de quando o WA ficou "pronto" (warm-up de getNumberId)
 
 // ---- Versão do WhatsApp Web: usa o cache local mais recente ----
 function resolverWebVersion() {
@@ -281,6 +282,7 @@ async function iniciarWhatsApp() {
         clienteWA._readyTimeout = null;
       }
       whatsappStatus = "pronto";
+      _prontoDesde = Date.now(); // marca o instante para o warm-up de resolverNumero
       io.emit("wa:status", { status: "pronto" });
     });
 
@@ -347,6 +349,7 @@ io.on("connection", (socket) => {
 
   // Envia status atual para o novo cliente
   socket.emit("wa:status", { status: whatsappStatus });
+  socket.emit("anti-ban:status", antiBan.getStatus());
 
   socket.on("wa:iniciar", () => {
     console.log("▶️ Solicitação para iniciar WhatsApp");
@@ -389,15 +392,28 @@ async function resolverNumero(telefone) {
     return cached;
   }
 
+  // ── Warm-up: nos primeiros segundos após "ready", o getNumberId pode
+  // retornar falso-negativo (null) mesmo para números válidos, porque o
+  // WhatsApp Web ainda está sincronizando o índice de contatos internamente.
+  // Damos mais tentativas e mais tempo de espera nesse período inicial.
+  const msDesdePronto = _prontoDesde ? Date.now() - _prontoDesde : Infinity;
+  const emWarmup = msDesdePronto < 45000; // primeiros 45s após "pronto"
+  const maxTentativas = emWarmup ? 4 : 2;
+  const esperaEntreTentativas = emWarmup ? 8000 : 5000;
+
   // Tenta número normal e também sem o 9 extra (regiões antigas)
   const candidatos = [numero];
   if (numero.length === 13 && numero[4] === "9") {
     candidatos.push(numero.slice(0, 4) + numero.slice(5));
   }
+  // Também tenta adicionar o 9 extra, caso o cliente tenha cadastrado sem ele
+  if (numero.length === 12) {
+    candidatos.push(numero.slice(0, 4) + "9" + numero.slice(4));
+  }
 
   for (const candidato of candidatos) {
-    // Até 2 tentativas: WA pode estar aquecendo logo após reconectar
-    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    let nuloDefinitivo = false;
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       try {
         const numberId = await Promise.race([
           clienteWA.getNumberId(candidato),
@@ -408,14 +424,18 @@ async function resolverNumero(telefone) {
           _cacheNumeros.set(numero, resultado);
           return resultado;
         }
-        logFile(`⚠️  getNumberId retornou null para ${candidato}`);
-        break; // null = número realmente não existe, não adianta tentar de novo
+        logFile(`⚠️  getNumberId retornou null para ${candidato} (tentativa ${tentativa}/${maxTentativas}${emWarmup ? ", em warm-up" : ""})`);
+        // Durante o warm-up, um "null" pode ser falso-negativo → tenta de novo.
+        // Fora do warm-up, confia no resultado (número realmente não existe).
+        if (!emWarmup) { nuloDefinitivo = true; break; }
+        if (tentativa < maxTentativas) {
+          await new Promise(r => setTimeout(r, esperaEntreTentativas));
+        }
       } catch (err) {
         if (err.message === "timeout") {
-          logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — tentativa ${tentativa}/2`);
-          if (tentativa < 2) {
-            // Aguarda 5s antes de tentar novamente (WA ainda aquecendo)
-            await new Promise(r => setTimeout(r, 5000));
+          logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — tentativa ${tentativa}/${maxTentativas}`);
+          if (tentativa < maxTentativas) {
+            await new Promise(r => setTimeout(r, esperaEntreTentativas));
           }
         } else {
           logFile(`⚠️  Erro ao verificar ${candidato}: ${err.message}`);
@@ -423,6 +443,7 @@ async function resolverNumero(telefone) {
         }
       }
     }
+    if (nuloDefinitivo) break;
   }
 
   logFile(`❌ Número ${numero} não encontrado no WhatsApp`);
@@ -524,54 +545,74 @@ app.post("/api/send", async (req, res) => {
   }
 });
 
-// ---- API: Enviar mensagens em lote ----
-app.post("/api/send-batch", async (req, res) => {
-  const { mensagens, fotos } = req.body;   // fotos = array de dataURL base64 (opcional)
+// ---- Jobs de disparo em lote (processados em background, com progresso via Socket.io) ----
+// Um Map simples é suficiente aqui: só roda um processo Node por instância,
+// e cada usuário do painel local dispara um lote por vez.
+const _batchJobs = new Map(); // jobId → { cancelado: boolean }
 
-  if (!mensagens || !Array.isArray(mensagens)) {
-    return res.status(400).json({ ok: false, erro: "mensagens deve ser um array" });
-  }
-  if (!clienteWA || whatsappStatus !== "pronto") {
-    return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
-  }
+function gerarJobId() {
+  return `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
-  // ── Anti-ban: verificar se pode enviar antes de iniciar o lote ──
-  const verificacao = antiBan.podeEnviar();
-  if (!verificacao.permitido) {
-    return res.status(429).json({ ok: false, erro: verificacao.motivo });
-  }
-
-  // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
-  const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
-  const mediasRaw = await Promise.all(
-    fotosArray.map((f, i) => processarMedia(f, `imovel_${i + 1}.jpg`))
-  );
-  const medias = mediasRaw.filter(Boolean);
-
-  // Dispara em sequência com delays humanizados (anti-ban)
+// Processa o lote inteiro em background, emitindo eventos de progresso.
+// Nunca aborta o lote por causa de limite de hora/dia — em vez disso PAUSA
+// e avisa o usuário (via evento) até poder continuar, ou até esgotar o
+// limite diário (aí sim marca o restante como pendente e encerra o job).
+async function processarLoteBackground(jobId, mensagens, medias) {
+  const jobState = _batchJobs.get(jobId);
   const resultados = [];
-  for (let idx = 0; idx < mensagens.length; idx++) {
+  const total = mensagens.length;
+
+  const emitProgresso = (extra = {}) => {
+    io.emit("disparo:progresso", {
+      jobId,
+      total,
+      enviados: resultados.filter(r => r.ok).length,
+      erros: resultados.filter(r => !r.ok).length,
+      processados: resultados.length,
+      ...extra,
+    });
+  };
+
+  for (let idx = 0; idx < total; idx++) {
+    if (jobState?.cancelado) {
+      for (let j = idx; j < total; j++) {
+        resultados.push({ numero: mensagens[j].telefone, ok: false, erro: "Cancelado pelo usuário" });
+      }
+      emitProgresso({ status: "cancelado" });
+      break;
+    }
+
     const item = mensagens[idx];
 
-    // ── Anti-ban: re-verificar limite a cada mensagem do lote ──
-    const check = antiBan.podeEnviar();
-    if (!check.permitido) {
-      // Marca restantes como não enviados
-      for (let j = idx; j < mensagens.length; j++) {
-        resultados.push({
-          numero: mensagens[j].telefone,
-          ok: false,
-          erro: check.motivo
-        });
+    // ── Anti-ban: se bateu limite de hora, PAUSA e avisa — não aborta ──
+    const podeAgora = antiBan.podeEnviar();
+    if (!podeAgora.permitido) {
+      if (podeAgora.aguardarMs === null) {
+        // Limite diário ou fora do horário comercial: não compensa esperar.
+        // Marca o restante como pendente (não erro definitivo) e encerra o job.
+        for (let j = idx; j < total; j++) {
+          resultados.push({ numero: mensagens[j].telefone, ok: false, erro: podeAgora.motivo, pendente: true });
+        }
+        emitProgresso({ status: "pausado_definitivo", motivo: podeAgora.motivo });
+        break;
       }
-      break;
+
+      emitProgresso({ status: "aguardando_limite", motivo: podeAgora.motivo, aguardarMs: podeAgora.aguardarMs });
+      await antiBan.esperarLiberar((info) => {
+        if (jobState?.cancelado) return;
+        emitProgresso({ status: "aguardando_limite", motivo: info.motivo, aguardarMs: info.aguardarMs });
+      });
+      if (jobState?.cancelado) continue; // volta ao topo do for, que vai tratar o cancelamento
     }
 
     let resolvido = null;
     try {
+      emitProgresso({ status: "verificando_numero", clienteAtual: item.nome || item.telefone });
       resolvido = await resolverNumero(item.telefone || "");
     } catch (err) {
       resultados.push({ numero: item.telefone, ok: false, erro: "Erro ao verificar número" });
+      emitProgresso();
       continue;
     }
 
@@ -581,10 +622,13 @@ app.post("/api/send-batch", async (req, res) => {
         ok: false,
         erro: `Número não registrado no WhatsApp (${item.telefone})`
       });
+      emitProgresso();
       continue;
     }
 
     try {
+      emitProgresso({ status: "enviando", clienteAtual: item.nome || resolvido.numero });
+
       // ── Anti-ban: simular digitação ──
       await antiBan.simularDigitacao(clienteWA, resolvido.chatId);
 
@@ -613,10 +657,13 @@ app.post("/api/send-batch", async (req, res) => {
       resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
     }
 
-    // ── Anti-ban: delay humanizado entre destinatários (substitui o delay fixo) ──
-    if (idx < mensagens.length - 1) {
+    emitProgresso();
+
+    // ── Anti-ban: delay humanizado entre destinatários ──
+    if (idx < total - 1) {
       const delay = antiBan.calcularDelay();
       logFile(`⏳ Anti-ban: aguardando ${(delay / 1000).toFixed(1)}s antes do próximo envio...`);
+      emitProgresso({ status: "pausa_curta", aguardarMs: delay });
       await antiBan.sleep(delay);
     }
   }
@@ -625,7 +672,58 @@ app.post("/api/send-batch", async (req, res) => {
   const qtdErr = resultados.filter(r => !r.ok).length;
   console.log(`✅ Lote concluído: ${qtdOk} enviados, ${qtdErr} com erro`);
 
-  res.json({ ok: true, resultados });
+  io.emit("disparo:concluido", { jobId, resultados, qtdOk, qtdErr });
+  _batchJobs.delete(jobId);
+}
+
+// ---- API: Enviar mensagens em lote (inicia job em background, retorna jobId imediatamente) ----
+app.post("/api/send-batch", async (req, res) => {
+  const { mensagens, fotos } = req.body;   // fotos = array de dataURL base64 (opcional)
+
+  if (!mensagens || !Array.isArray(mensagens)) {
+    return res.status(400).json({ ok: false, erro: "mensagens deve ser um array" });
+  }
+  if (!clienteWA || whatsappStatus !== "pronto") {
+    return res.status(503).json({ ok: false, erro: "WhatsApp não está conectado" });
+  }
+
+  // ── Anti-ban: só bloqueia de início se for horário/dia (não compensa nem começar) ──
+  const verificacao = antiBan.podeEnviar();
+  if (!verificacao.permitido && verificacao.aguardarMs === null) {
+    return res.status(429).json({ ok: false, erro: verificacao.motivo });
+  }
+
+  // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
+  const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
+  const mediasRaw = await Promise.all(
+    fotosArray.map((f, i) => processarMedia(f, `imovel_${i + 1}.jpg`))
+  );
+  const medias = mediasRaw.filter(Boolean);
+
+  const jobId = gerarJobId();
+  _batchJobs.set(jobId, { cancelado: false });
+
+  // Responde IMEDIATAMENTE com o jobId — o front acompanha o progresso via
+  // socket ("disparo:progresso" / "disparo:concluido"), sem depender de uma
+  // única requisição HTTP longa que trava a UI por minutos/horas.
+  res.json({ ok: true, jobId, total: mensagens.length });
+
+  // Processa em background (não bloqueia a resposta HTTP acima)
+  processarLoteBackground(jobId, mensagens, medias).catch(err => {
+    logFile(`💥 Erro no job de disparo ${jobId}: ${err.message}`);
+    io.emit("disparo:concluido", { jobId, erro: err.message });
+    _batchJobs.delete(jobId);
+  });
+});
+
+// ---- API: Cancelar um disparo em andamento ----
+app.post("/api/send-batch/:jobId/cancelar", (req, res) => {
+  const job = _batchJobs.get(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ ok: false, erro: "Job não encontrado (já concluído ou inválido)" });
+  }
+  job.cancelado = true;
+  res.json({ ok: true });
 });
 
 // ---- API: Status do anti-ban (monitorar limites no frontend) ----
@@ -641,6 +739,20 @@ app.post("/api/anti-ban/config", (req, res) => {
   }
   antiBan.atualizarConfig(campos);
   res.json({ ok: true, config: antiBan.getConfig() });
+});
+
+// ---- API: Liga/desliga o anti-ban (switch do dashboard) ----
+app.post("/api/anti-ban/toggle", (req, res) => {
+  const { ativo } = req.body;
+  if (typeof ativo !== "boolean") {
+    return res.status(400).json({ ok: false, erro: "campo 'ativo' (boolean) é obrigatório" });
+  }
+  antiBan.setAtivo(ativo);
+  logFile(`🛡️  Anti-ban ${ativo ? "ATIVADO" : "DESATIVADO"} pelo usuário via dashboard.`);
+  const status = antiBan.getStatus();
+  // Avisa todos os clientes conectados (outras abas/dispositivos) da mudança
+  io.emit("anti-ban:status", status);
+  res.json({ ok: true, ...status });
 });
 
 // ---- API: Limpar sessão (use quando 'ready' nunca dispara) ----

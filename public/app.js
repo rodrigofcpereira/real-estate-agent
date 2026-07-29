@@ -35,6 +35,7 @@ const ITENS_POR_PAGINA = 10;
 // ---- Inicialização ----
 document.addEventListener("DOMContentLoaded", () => {
   iniciarSocket();
+  sincronizarSwitchAntiBan();
 
   // Máscara automática de data (DD/MM/AAAA)
   ["f-nascimento","f-inicio","f-termino"].forEach(id => {
@@ -343,7 +344,14 @@ function abrirModal(titulo, texto, links) {
   });
   document.getElementById("modalMsg").style.display = "flex";
 }
-function fecharModal() { document.getElementById("modalMsg").style.display = "none"; }
+function fecharModal() {
+  document.getElementById("modalMsg").style.display = "none";
+  // Fechar o modal NÃO cancela o job em background — ele continua enviando
+  // (o usuário pode reabrir o disparo depois ou apenas deixar rodando).
+  // Apenas escondemos o botão de cancelar já que o modal está fechado.
+  const btnCancelar = document.getElementById("disparo-cancelar-btn");
+  if (btnCancelar) btnCancelar.style.display = "none";
+}
 
 // ---- Modal escolha de mensagem ----
 function abrirModalMensagem() {
@@ -639,8 +647,85 @@ function iniciarSocket() {
       mostrarQR(data.qr);
     });
 
+    // ---- Progresso de disparos em lote (jobs em background no servidor) ----
+    socket.on("disparo:progresso", (info) => handleDisparoProgresso(info));
+    socket.on("disparo:concluido", (info) => handleDisparoConcluido(info));
+
+    // ---- Estado do switch anti-ban (sincroniza entre abas/dispositivos) ----
+    socket.on("anti-ban:status", (status) => atualizarSwitchAntiBan(status.ativo));
+
   } catch(e) {
     socket = null;
+  }
+}
+
+// ==============================================
+//  SWITCH ANTI-BAN (dashboard)
+// ==============================================
+
+// Atualiza o visual do switch sem disparar o evento onchange de novo
+function atualizarSwitchAntiBan(ativo) {
+  const checkbox = document.getElementById("antiban-toggle");
+  const label    = document.getElementById("antiban-switch-state");
+  if (checkbox) checkbox.checked = !!ativo;
+  if (label) {
+    label.textContent = ativo ? "Ativado" : "Desativado";
+    label.classList.toggle("off", !ativo);
+  }
+}
+
+// Busca o estado atual do anti-ban no servidor (ao carregar o dashboard)
+async function sincronizarSwitchAntiBan() {
+  try {
+    const res = await fetch(`${API_BASE}/api/anti-ban/status`);
+    if (!res.ok) return;
+    const data = await res.json();
+    atualizarSwitchAntiBan(data.ativo);
+  } catch (_) {
+    // Sem conexão ainda — mantém o estado padrão (ativado) até o socket atualizar
+  }
+}
+
+// Chamado pelo switch no topbar do dashboard
+async function toggleAntiBan(ativo) {
+  const checkbox = document.getElementById("antiban-toggle");
+
+  // Desligar exige confirmação explícita — é uma decisão de risco
+  if (!ativo) {
+    const confirmado = confirm(
+      "⚠️ Desligar o controle de envios remove TODAS as proteções contra bloqueio do WhatsApp:\n\n" +
+      "• Sem pausas entre mensagens (envio em alta velocidade)\n" +
+      "• Sem limite diário/por hora\n" +
+      "• Sem simulação de digitação\n" +
+      "• Envios liberados fora do horário comercial\n\n" +
+      "Isso aumenta bastante o risco do número ser bloqueado pelo WhatsApp, " +
+      "principalmente em disparos para muitos contatos.\n\n" +
+      "Tem certeza que deseja desligar?"
+    );
+    if (!confirmado) {
+      // Usuário cancelou — reverte o checkbox visualmente
+      if (checkbox) checkbox.checked = true;
+      return;
+    }
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/anti-ban/toggle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo })
+    });
+    if (!res.ok) throw new Error(`Erro ${res.status}`);
+    const data = await res.json();
+    atualizarSwitchAntiBan(data.ativo);
+    mostrarToast(
+      data.ativo ? "🛡️ Controle de envios ativado" : "⚠️ Controle de envios desativado — envios sem proteção",
+      data.ativo ? "ok" : "err"
+    );
+  } catch (err) {
+    // Falha ao salvar no servidor — reverte o switch para o estado anterior
+    if (checkbox) checkbox.checked = !ativo;
+    mostrarToast("Não foi possível alterar o anti-ban (verifique a conexão)", "err");
   }
 }
 
@@ -874,13 +959,44 @@ function aplicarSugestao(tipo) {
   atualizarContadorDisparo();
 }
 
+// ---- Estado do job de disparo em andamento (para progresso via socket) ----
+let disparoJobAtual   = null; // jobId em andamento (ou null)
+let disparoClientesRef = [];  // lista de clientes na ordem enviada (para mapear índice → linha)
+
+function formatarTempo(ms) {
+  const s = Math.ceil(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.ceil(s / 60);
+  return `${m} min`;
+}
+
+// Atualiza o banner de status no topo da lista (pausa, aguardando limite, etc.)
+function atualizarBannerDisparo(html, tipo = "info") {
+  let banner = document.getElementById("disparo-status-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "disparo-status-banner";
+    const modalTexto = document.getElementById("modalTexto");
+    modalTexto.after(banner);
+  }
+  banner.className = `send-status-banner send-status-${tipo}`;
+  banner.innerHTML = html;
+}
+
+function removerBannerDisparo() {
+  const banner = document.getElementById("disparo-status-banner");
+  if (banner) banner.remove();
+}
+
 async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
   // Monta lista visual no modal
   document.getElementById("modalTitulo").textContent = titulo;
   document.getElementById("modalTexto").textContent  = `Enviando para ${clientes.length} cliente(s)...`;
+  removerBannerDisparo();
   const lista = document.getElementById("modalLista");
   lista.innerHTML = "";
   lista.className = "send-progress";
+  disparoClientesRef = clientes;
 
   // Criar itens visuais com status "aguardando"
   clientes.forEach((r, i) => {
@@ -894,12 +1010,16 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     lista.appendChild(div);
   });
 
+  // Botão de cancelar no rodapé do modal (mostrado só durante o envio)
+  const btnCancelar = document.getElementById("disparo-cancelar-btn");
+  if (btnCancelar) btnCancelar.style.display = "inline-flex";
+
   document.getElementById("modalMsg").style.display = "flex";
 
-  // Enviar em lote via API
-  // As fotos vão uma vez só no body — não duplicadas por destinatário
+  // Enviar em lote via API — o servidor responde IMEDIATAMENTE com um jobId
+  // e processa em background. O progresso chega via socket ("disparo:progresso").
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
-  const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r) }));
+  const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r), nome: r.nome }));
 
   let data;
   try {
@@ -910,7 +1030,6 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     });
 
     if (!res.ok) {
-      // Erro HTTP (ex: 503 WhatsApp desconectado, 500 interno)
       let errMsg = `Erro ${res.status}`;
       try { const e = await res.json(); errMsg = e.erro || errMsg; } catch(_) {}
       throw new Error(errMsg);
@@ -918,13 +1037,11 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
 
     data = await res.json();
   } catch (err) {
-    // Falha de rede ou erro HTTP
     const isOffline = err.message.includes("fetch") || err.message.includes("Failed");
     const msgErr = isOffline
       ? "Não foi possível conectar ao servidor. Verifique se ele está rodando (npm start)."
       : err.message;
 
-    // Marcar todos como erro
     clientes.forEach((_, i) => {
       const el = document.getElementById("send-status-" + i);
       if (el) { el.textContent = "❌ Não enviado"; el.className = "send-item-status send-err"; }
@@ -932,49 +1049,119 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
 
     document.getElementById("modalTexto").innerHTML =
       `<span class="send-error-banner">❌ Falha no envio — ${msgErr}</span>`;
+    if (btnCancelar) btnCancelar.style.display = "none";
     return;
   }
 
-  // Processar resultado de cada item
-  if (data && data.resultados) {
-    let qtdOk = 0, qtdErr = 0;
+  // Guarda o jobId — os listeners globais de socket (disparo:progresso /
+  // disparo:concluido) vão atualizar a UI conforme o backend processa.
+  disparoJobAtual = data.jobId;
+}
 
-    data.resultados.forEach((r, i) => {
-      const el = document.getElementById("send-status-" + i);
-      if (!el) return;
-      if (r.ok) {
-        el.textContent = "✅ Enviado";
-        el.className   = "send-item-status send-ok";
-        qtdOk++;
-      } else {
-        // Mostra o motivo do erro de cada item individualmente
-        const motivo = r.erro || "número inválido ou bloqueado";
-        el.textContent = `❌ Erro`;
-        el.className   = "send-item-status send-err";
-        el.title       = motivo; // tooltip com detalhe
-
-        // Adiciona linha de detalhe do erro abaixo do item
-        const item = document.getElementById("send-item-" + i);
-        if (item) {
-          const det = document.createElement("div");
-          det.className = "send-item-error-detail";
-          det.textContent = `↳ ${motivo}`;
-          item.after(det);
-        }
-        qtdErr++;
-      }
-    });
-
-    // Resumo final
-    const textoFinal = qtdErr === 0
-      ? `✅ Todas as ${qtdOk} mensagens enviadas com sucesso!`
-      : qtdOk === 0
-        ? `❌ Nenhuma mensagem foi enviada. Verifique os números.`
-        : `⚠️ ${qtdOk} enviada(s) com sucesso · ${qtdErr} com erro`;
-
-    document.getElementById("modalTexto").innerHTML =
-      `<span class="${qtdErr === 0 ? 'send-summary-ok' : qtdOk === 0 ? 'send-summary-err' : 'send-summary-warn'}">${textoFinal}</span>`;
+// Cancela o disparo em andamento (chamado pelo botão no modal)
+async function cancelarDisparoAtual() {
+  if (!disparoJobAtual) return;
+  try {
+    await fetch(`${API_BASE}/api/send-batch/${disparoJobAtual}/cancelar`, { method: "POST" });
+    atualizarBannerDisparo("⏹️ Cancelando... as mensagens já enviadas não serão desfeitas.", "warn");
+  } catch (_) {
+    mostrarToast("Não foi possível cancelar (verifique a conexão)", "err");
   }
+}
+
+// ---- Listeners globais de progresso do disparo (registrados uma única vez) ----
+function handleDisparoProgresso(info) {
+  if (!info || info.jobId !== disparoJobAtual) return;
+
+  const clientes = disparoClientesRef;
+
+  // Atualiza o item específico sendo processado agora, se aplicável
+  if (info.status === "verificando_numero" || info.status === "enviando") {
+    const idx = info.processados; // próximo índice não processado ainda
+    const el = document.getElementById("send-status-" + idx);
+    if (el && el.className.includes("send-pending")) {
+      el.textContent = info.status === "enviando" ? "📤 Enviando..." : "🔎 Verificando número...";
+    }
+  }
+
+  // Banner de status conforme a fase do processamento
+  if (info.status === "aguardando_limite") {
+    atualizarBannerDisparo(
+      `⏸️ Pausado temporariamente — ${info.motivo}${info.aguardarMs ? ` (retoma em ~${formatarTempo(info.aguardarMs)})` : ""}`,
+      "warn"
+    );
+  } else if (info.status === "pausa_curta") {
+    atualizarBannerDisparo(`⏳ Aguardando ${formatarTempo(info.aguardarMs)} antes do próximo envio (ritmo humano anti-bloqueio)...`, "info");
+  } else if (info.status === "pausado_definitivo") {
+    atualizarBannerDisparo(`⏸️ ${info.motivo} As mensagens restantes ficarão pendentes.`, "err");
+  } else if (info.status === "cancelado") {
+    atualizarBannerDisparo("⏹️ Envio cancelado pelo usuário.", "warn");
+  } else {
+    removerBannerDisparo();
+  }
+
+  // Atualiza contador no topo
+  document.getElementById("modalTexto").textContent =
+    `Enviando... ${info.enviados} enviada(s), ${info.erros} com erro, ${info.total - info.processados} restante(s).`;
+}
+
+function handleDisparoConcluido(info) {
+  if (!info || info.jobId !== disparoJobAtual) return;
+  disparoJobAtual = null;
+
+  const btnCancelar = document.getElementById("disparo-cancelar-btn");
+  if (btnCancelar) btnCancelar.style.display = "none";
+
+  if (info.erro) {
+    document.getElementById("modalTexto").innerHTML =
+      `<span class="send-error-banner">❌ Falha no envio — ${info.erro}</span>`;
+    return;
+  }
+
+  const resultados = info.resultados || [];
+  const clientes = disparoClientesRef;
+  let qtdOk = 0, qtdErr = 0, qtdPendente = 0;
+
+  resultados.forEach((r, i) => {
+    const el = document.getElementById("send-status-" + i);
+    if (!el) return;
+    if (r.ok) {
+      el.textContent = "✅ Enviado";
+      el.className   = "send-item-status send-ok";
+      qtdOk++;
+    } else {
+      const motivo = r.erro || "número inválido ou bloqueado";
+      el.textContent = r.pendente ? "⏸️ Pendente" : "❌ Erro";
+      el.className   = r.pendente ? "send-item-status send-pending" : "send-item-status send-err";
+      el.title       = motivo;
+      if (r.pendente) qtdPendente++; else qtdErr++;
+
+      const item = document.getElementById("send-item-" + i);
+      if (item && !item.nextElementSibling?.classList?.contains("send-item-error-detail")) {
+        const det = document.createElement("div");
+        det.className = "send-item-error-detail";
+        det.textContent = `↳ ${motivo}`;
+        item.after(det);
+      }
+    }
+  });
+
+  removerBannerDisparo();
+
+  const partes = [];
+  if (qtdOk > 0) partes.push(`✅ ${qtdOk} enviada(s)`);
+  if (qtdErr > 0) partes.push(`❌ ${qtdErr} com erro`);
+  if (qtdPendente > 0) partes.push(`⏸️ ${qtdPendente} pendente(s) — tente novamente mais tarde`);
+
+  const textoFinal = partes.length > 0 ? partes.join(" · ") : "Nenhuma mensagem processada.";
+  const tipoClasse = qtdErr === 0 && qtdPendente === 0
+    ? "send-summary-ok"
+    : qtdOk === 0
+      ? "send-summary-err"
+      : "send-summary-warn";
+
+  document.getElementById("modalTexto").innerHTML =
+    `<span class="${tipoClasse}">${textoFinal}</span>`;
 }
 
 // ==============================================
