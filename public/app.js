@@ -654,8 +654,43 @@ function iniciarSocket() {
     // ---- Estado do switch anti-ban (sincroniza entre abas/dispositivos) ----
     socket.on("anti-ban:status", (status) => atualizarSwitchAntiBan(status.ativo));
 
+    // ---- Diagnóstico remoto: erros do backend (WhatsApp) gravados no Firestore ----
+    socket.on("diag:evento", (evento) => registrarDiagnostico(evento));
+
   } catch(e) {
     socket = null;
+  }
+}
+
+// ==============================================
+//  DIAGNÓSTICO REMOTO (telemetria de erros)
+// ==============================================
+//
+// O backend (server.js) roda localmente na máquina do cliente e não tem como
+// gravar direto no Firestore com segurança (não é seguro embutir uma
+// credencial admin no instalador). Em vez disso, ele emite um evento via
+// socket e o FRONTEND grava aqui — usando a conta Firebase já autenticada do
+// corretor. Assim você consegue ver no Firebase Console o que está
+// acontecendo na máquina de cada cliente, sem precisar pedir o log manualmente.
+
+async function registrarDiagnostico(evento) {
+  try {
+    if (!currentUser || !db) return; // sem sessão logada, não há como identificar o corretor
+
+    await db.collection("diagnosticos").add({
+      tipo: evento.tipo,
+      dados: evento.dados || {},
+      timestampCliente: evento.timestamp || Date.now(),
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      usuarioUid: currentUser.uid,
+      usuarioEmail: currentUser.email || null,
+      plataforma: navigator.platform || "desconhecida",
+      userAgent: navigator.userAgent || "desconhecido",
+      appVersion: (window.APP_VERSION || "desconhecida"),
+    });
+  } catch (err) {
+    // Nunca deixa o diagnóstico quebrar o app — só loga no console local
+    console.error("Falha ao registrar diagnóstico no Firestore:", err.message);
   }
 }
 

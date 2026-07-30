@@ -26,6 +26,16 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // ── Diagnósticos (telemetria de erros para debug remoto) ────────────────────
+    // O app grava aqui automaticamente quando algo dá errado (número não
+    // encontrado, timeout, falha de envio, desconexão, etc). Só permite criar
+    // (nunca ler/editar/apagar pelo app) — a visualização é feita direto no
+    // Firebase Console, que como owner do projeto ignora estas regras.
+    match /diagnosticos/{docId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if false;
+    }
+
     // ── Negar tudo o mais ─────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

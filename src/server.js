@@ -45,6 +45,19 @@ function logFile(msg) {
   try { fs.appendFileSync(LOG_FILE, line); } catch(_) {}
 }
 
+// ---- Telemetria de erros (diagnóstico remoto) ----
+// O backend Node não pode gravar direto no Firestore (não tem credencial de
+// usuário nem é seguro embutir uma chave admin no instalador). Em vez disso,
+// emite um evento via Socket.io — o frontend (já autenticado com a conta
+// Firebase do corretor) recebe e grava na coleção "diagnosticos". Assim,
+// qualquer erro relevante que acontecer na máquina do cliente aparece no seu
+// Firebase Console, sem precisar pedir o wa_debug.log manualmente.
+function emitirDiagnostico(tipo, dados = {}) {
+  try {
+    io.emit("diag:evento", { tipo, dados, timestamp: Date.now() });
+  } catch (_) { /* socket pode não estar pronto ainda — não é crítico */ }
+}
+
 const ALLOWED_ORIGINS = [
   "https://tech-corretor.web.app",
   "https://tech-corretor.firebaseapp.com",
@@ -288,6 +301,7 @@ async function iniciarWhatsApp() {
 
     clienteWA.on("auth_failure", async (msg) => {
       console.error("❌ Falha na autenticação:", msg);
+      emitirDiagnostico("auth_failure", { mensagem: msg });
       _tentativasReconexao = 0;
       whatsappStatus = "erro";
       io.emit("wa:status", { status: "erro", message: "Falha na autenticação. Tente novamente." });
@@ -296,6 +310,7 @@ async function iniciarWhatsApp() {
 
     clienteWA.on("disconnected", async (reason) => {
       console.warn("⚠️ WhatsApp desconectado:", reason);
+      emitirDiagnostico("whatsapp_desconectado", { motivo: String(reason) });
       whatsappStatus = "desconectado";
       _cacheNumeros.clear(); // limpa cache ao desconectar para evitar dados velhos
       io.emit("wa:status", { status: "desconectado", message: reason });
@@ -335,6 +350,11 @@ async function iniciarWhatsApp() {
     logFile(`❌ Erro ao iniciar WhatsApp: ${err.message}`);
     logFile(`   STACK: ${err.stack}`);
     logFile(`   CHROMIUM_PATH: ${process.env.CHROMIUM_PATH || "(não definido)"}`);
+    emitirDiagnostico("falha_iniciar_whatsapp", {
+      erro: err.message,
+      chromiumPath: process.env.CHROMIUM_PATH || "(não definido)",
+      plataforma: process.platform,
+    });
     whatsappStatus = "erro";
     io.emit("wa:status", { status: "erro", message: "Erro ao iniciar. Tente novamente." });
     await destruirCliente();
@@ -411,6 +431,9 @@ async function resolverNumero(telefone) {
     candidatos.push(numero.slice(0, 4) + "9" + numero.slice(4));
   }
 
+  // Histórico de tentativas — usado para telemetria caso o número não seja resolvido
+  const historicoTentativas = [];
+
   for (const candidato of candidatos) {
     let nuloDefinitivo = false;
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
@@ -425,6 +448,7 @@ async function resolverNumero(telefone) {
           return resultado;
         }
         logFile(`⚠️  getNumberId retornou null para ${candidato} (tentativa ${tentativa}/${maxTentativas}${emWarmup ? ", em warm-up" : ""})`);
+        historicoTentativas.push({ candidato, tentativa, resultado: "null" });
         // Durante o warm-up, um "null" pode ser falso-negativo → tenta de novo.
         // Fora do warm-up, confia no resultado (número realmente não existe).
         if (!emWarmup) { nuloDefinitivo = true; break; }
@@ -434,11 +458,13 @@ async function resolverNumero(telefone) {
       } catch (err) {
         if (err.message === "timeout") {
           logFile(`⚠️  Timeout (${NUMERO_TIMEOUT_MS/1000}s) ao verificar ${candidato} — tentativa ${tentativa}/${maxTentativas}`);
+          historicoTentativas.push({ candidato, tentativa, resultado: "timeout" });
           if (tentativa < maxTentativas) {
             await new Promise(r => setTimeout(r, esperaEntreTentativas));
           }
         } else {
           logFile(`⚠️  Erro ao verificar ${candidato}: ${err.message}`);
+          historicoTentativas.push({ candidato, tentativa, resultado: "erro", erro: err.message });
           break;
         }
       }
@@ -447,6 +473,15 @@ async function resolverNumero(telefone) {
   }
 
   logFile(`❌ Número ${numero} não encontrado no WhatsApp`);
+  emitirDiagnostico("numero_nao_encontrado", {
+    numeroOriginal: telefone,
+    numeroNormalizado: numero,
+    candidatosTestados: candidatos,
+    emWarmup,
+    msDesdePronto: _prontoDesde ? Date.now() - _prontoDesde : null,
+    historicoTentativas,
+    plataforma: process.platform,
+  });
   return null;
 }
 
@@ -541,6 +576,11 @@ app.post("/api/send", async (req, res) => {
     res.json({ ok: true, numero: resolvido.numero });
   } catch (err) {
     console.error("Erro ao enviar mensagem:", err.message);
+    emitirDiagnostico("falha_envio_individual", {
+      numero: resolvido.numero,
+      erro: err.message,
+      temMidia: medias.length > 0,
+    });
     res.status(500).json({ ok: false, erro: `Falha ao enviar: ${err.message}` });
   }
 });
@@ -655,6 +695,14 @@ async function processarLoteBackground(jobId, mensagens, medias) {
     } catch (err) {
       console.error(`❌ Falha → ${resolvido.numero}:`, err.message);
       resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
+      emitirDiagnostico("falha_envio_lote", {
+        jobId,
+        numero: resolvido.numero,
+        erro: err.message,
+        temMidia: medias.length > 0,
+        posicaoNoLote: idx,
+        totalLote: total,
+      });
     }
 
     emitProgresso();
@@ -711,6 +759,7 @@ app.post("/api/send-batch", async (req, res) => {
   // Processa em background (não bloqueia a resposta HTTP acima)
   processarLoteBackground(jobId, mensagens, medias).catch(err => {
     logFile(`💥 Erro no job de disparo ${jobId}: ${err.message}`);
+    emitirDiagnostico("falha_job_disparo", { jobId, erro: err.message, totalMensagens: mensagens.length });
     io.emit("disparo:concluido", { jobId, erro: err.message });
     _batchJobs.delete(jobId);
   });
