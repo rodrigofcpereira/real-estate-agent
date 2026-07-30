@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "test": "vitest --run",
+    "test:watch": "vitest",
     "electron": "electron .",
     "prepare-chromium": "node scripts/copy-chromium.js",
     "rebuild": "electron-rebuild -f -w whatsapp-web.js",
@@ -89,6 +91,7 @@
     "@electron/rebuild": "^3.7.2",
     "electron": "~40.10.2",
     "electron-builder": "^26.0.0",
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "vitest": "^4.1.10"
   }
 }
