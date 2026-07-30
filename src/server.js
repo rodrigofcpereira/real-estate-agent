@@ -438,7 +438,8 @@ io.on("connection", (socket) => {
 const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } — só guarda sucessos
 
 // Timeout para getNumberId: VPS lenta precisa de mais tempo
-const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 60000 : 12000;
+// Windows local: 20s (era 12s — muito curto quando o WA está sob carga de lote grande)
+const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 60000 : 20000;
 
 async function resolverNumero(telefone) {
   // Remove tudo que não é dígito
@@ -458,9 +459,13 @@ async function resolverNumero(telefone) {
   // retornar falso-negativo (null) mesmo para números válidos, porque o
   // WhatsApp Web ainda está sincronizando o índice de contatos internamente.
   // Damos mais tentativas e mais tempo de espera nesse período inicial.
+  //
+  // Fora do warm-up, em lotes grandes o WA também pode throttlar e retornar
+  // null temporariamente — por isso usamos 3 tentativas (era 2) com espera
+  // de 5s entre elas, o que é suficiente para o WA liberar a próxima consulta.
   const msDesdePronto = _prontoDesde ? Date.now() - _prontoDesde : Infinity;
   const emWarmup = msDesdePronto < 45000; // primeiros 45s após "pronto"
-  const maxTentativas = emWarmup ? 4 : 2;
+  const maxTentativas = emWarmup ? 4 : 3;
   const esperaEntreTentativas = emWarmup ? 8000 : 5000;
 
   // Tenta número normal e também sem o 9 extra (regiões antigas)
@@ -477,7 +482,6 @@ async function resolverNumero(telefone) {
   const historicoTentativas = [];
 
   for (const candidato of candidatos) {
-    let nuloDefinitivo = false;
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       try {
         const numberId = await Promise.race([
@@ -491,9 +495,9 @@ async function resolverNumero(telefone) {
         }
         logFile(`⚠️  getNumberId retornou null para ${candidato} (tentativa ${tentativa}/${maxTentativas}${emWarmup ? ", em warm-up" : ""})`);
         historicoTentativas.push({ candidato, tentativa, resultado: "null" });
-        // Durante o warm-up, um "null" pode ser falso-negativo → tenta de novo.
-        // Fora do warm-up, confia no resultado (número realmente não existe).
-        if (!emWarmup) { nuloDefinitivo = true; break; }
+        // Tenta de novo em todas as situações (em warm-up E em lote grande,
+        // o WA pode retornar null temporariamente por throttling interno).
+        // Só desiste se esgotou todas as tentativas.
         if (tentativa < maxTentativas) {
           await new Promise(r => setTimeout(r, esperaEntreTentativas));
         }
@@ -511,7 +515,6 @@ async function resolverNumero(telefone) {
         }
       }
     }
-    if (nuloDefinitivo) break;
   }
 
   logFile(`❌ Número ${numero} não encontrado no WhatsApp`);
@@ -691,6 +694,16 @@ async function processarLoteBackground(jobId, mensagens, medias) {
     let resolvido = null;
     try {
       emitProgresso({ status: "verificando_numero", clienteAtual: item.nome || item.telefone });
+
+      // ── Delay antes de verificar número em lote grande ──
+      // O WhatsApp Web throttla consultas getNumberId quando muitas chegam em
+      // sequência rápida (retorna null para todos → "número não encontrado").
+      // Um delay curto antes de cada verificação resolve o problema sem afetar
+      // significativamente o tempo total do lote.
+      if (idx > 0) {
+        await antiBan.sleep(antiBan.isAtivo() ? 2000 : 500);
+      }
+
       resolvido = await resolverNumero(item.telefone || "");
     } catch (err) {
       resultados.push({ numero: item.telefone, ok: false, erro: "Erro ao verificar número" });
