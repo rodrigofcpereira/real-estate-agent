@@ -694,6 +694,81 @@ async function registrarDiagnostico(evento) {
   }
 }
 
+// ── Captura GLOBAL de erros do frontend (window.onerror + unhandledrejection) ──
+// Qualquer erro JS não tratado no browser é capturado e gravado no Firestore
+// com throttle/dedup para não inundar o banco com erros repetidos.
+(function() {
+  const _frontErros = new Map(); // assinatura → timestamp
+  let _frontContador = 0;
+  const _FRONT_LIMITE = 100; // max por sessão do browser
+
+  function _frontDeveReportar(assinatura) {
+    if (_frontContador >= _FRONT_LIMITE) return false;
+    const agora = Date.now();
+    const ultimo = _frontErros.get(assinatura);
+    if (ultimo && agora - ultimo < 60000) return false; // dedup 60s
+    _frontErros.set(assinatura, agora);
+    _frontContador++;
+    return true;
+  }
+
+  // Erros síncronos (throw, TypeError, ReferenceError, etc.)
+  window.onerror = function(message, source, lineno, colno, error) {
+    const msg = String(message || "");
+    const assinatura = msg.slice(0, 100);
+    if (_frontDeveReportar(assinatura)) {
+      registrarDiagnostico({
+        tipo: "frontend_erro",
+        dados: {
+          mensagem: msg.slice(0, 500),
+          source: (source || "").split("/").pop(), // só o nome do arquivo, não path completo
+          linha: lineno,
+          coluna: colno,
+          stack: (error?.stack || "").slice(0, 1000),
+        },
+        timestamp: Date.now(),
+      });
+    }
+  };
+
+  // Promises rejeitadas sem .catch()
+  window.addEventListener("unhandledrejection", function(event) {
+    const reason = event.reason;
+    const msg = reason?.message || String(reason || "");
+    const assinatura = "rej:" + msg.slice(0, 100);
+    if (_frontDeveReportar(assinatura)) {
+      registrarDiagnostico({
+        tipo: "frontend_unhandled_rejection",
+        dados: {
+          mensagem: msg.slice(0, 500),
+          stack: (reason?.stack || "").slice(0, 1000),
+        },
+        timestamp: Date.now(),
+      });
+    }
+  });
+
+  // Erros de rede (fetch/XHR falhando, imagens não carregando, scripts não carregando)
+  window.addEventListener("error", function(event) {
+    // Só captura erros de recurso (script, img, link), não erros JS (já pegos pelo onerror)
+    if (event.target && event.target !== window && event.target.tagName) {
+      const tag = event.target.tagName.toLowerCase();
+      const src = event.target.src || event.target.href || "";
+      const assinatura = "res:" + tag + ":" + src.slice(-80);
+      if (_frontDeveReportar(assinatura)) {
+        registrarDiagnostico({
+          tipo: "frontend_recurso_falhou",
+          dados: {
+            tag: tag,
+            src: src.slice(0, 300),
+          },
+          timestamp: Date.now(),
+        });
+      }
+    }
+  }, true); // capture phase para pegar erros de recursos
+})();
+
 // ==============================================
 //  SWITCH ANTI-BAN (dashboard)
 // ==============================================

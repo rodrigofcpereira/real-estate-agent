@@ -14,22 +14,64 @@ const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const antiBan = require("./anti-ban");
 
 // ---- Evita que erros do Puppeteer/Chrome derrubem o processo ----
+// + Telemetria global: qualquer exceção/rejeição não tratada é reportada ao Firestore
+const _diagErrosRecentes = new Map(); // assinatura → timestamp (dedup: mesmo erro não reporta 2x em 60s)
+const _diagContadorSessao = { total: 0, limite: 200 }; // máx 200 eventos por sessão (evita flood)
+
+function _gerarAssinaturaErro(msg) {
+  // Pega as primeiras 100 chars como "fingerprint" para dedup
+  return (msg || "").slice(0, 100);
+}
+
+function _deveReportar(assinatura) {
+  if (_diagContadorSessao.total >= _diagContadorSessao.limite) return false;
+  const agora = Date.now();
+  const ultimo = _diagErrosRecentes.get(assinatura);
+  if (ultimo && agora - ultimo < 60000) return false; // mesmo erro em menos de 60s = ignora
+  _diagErrosRecentes.set(assinatura, agora);
+  _diagContadorSessao.total++;
+  // Limpa assinaturas antigas (evita memory leak em sessões longas)
+  if (_diagErrosRecentes.size > 500) {
+    const corte = agora - 120000;
+    for (const [k, v] of _diagErrosRecentes) { if (v < corte) _diagErrosRecentes.delete(k); }
+  }
+  return true;
+}
+
 process.on("uncaughtException", (err) => {
+  const msg = err?.message || String(err);
   const ignore = ["TargetCloseError", "ProtocolError", "Target closed", "Session closed"];
-  if (ignore.some(e => err?.message?.includes(e) || err?.name?.includes(e))) {
-    logFile(`⚠️  Erro ignorado (Chrome fechou): ${err.message}`);
+  if (ignore.some(e => msg.includes(e) || err?.name?.includes(e))) {
+    logFile(`⚠️  Erro ignorado (Chrome fechou): ${msg}`);
     return;
   }
-  logFile(`💥 Erro não tratado: ${err.stack || err.message}`);
+  logFile(`💥 Erro não tratado: ${err.stack || msg}`);
+  const assinatura = _gerarAssinaturaErro(msg);
+  if (_deveReportar(assinatura)) {
+    emitirDiagnostico("uncaught_exception", {
+      erro: msg,
+      stack: (err.stack || "").slice(0, 1000),
+      plataforma: process.platform,
+    });
+  }
 });
 process.on("unhandledRejection", (reason) => {
   const msg = reason?.message || String(reason);
+  const stack = reason?.stack || "";
   const ignore = ["TargetCloseError", "ProtocolError", "Target closed", "Session closed"];
   if (ignore.some(e => msg.includes(e))) {
     logFile(`⚠️  Rejeição ignorada (Chrome fechou): ${msg}`);
     return;
   }
   logFile(`💥 Rejeição não tratada: ${msg}`);
+  const assinatura = _gerarAssinaturaErro(msg);
+  if (_deveReportar(assinatura)) {
+    emitirDiagnostico("unhandled_rejection", {
+      erro: msg,
+      stack: stack.slice(0, 1000),
+      plataforma: process.platform,
+    });
+  }
 });
 
 // ---- Log em arquivo para debug em produção ----
@@ -837,6 +879,24 @@ app.post("/api/iniciar", (req, res) => {
 });
 
 // ---- Iniciar servidor ----
+// ── Middleware catch-all de erro do Express (captura qualquer falha não tratada em rotas) ──
+app.use((err, req, res, _next) => {
+  const msg = err?.message || String(err);
+  logFile(`💥 Erro não tratado em rota ${req.method} ${req.path}: ${msg}`);
+  const assinatura = _gerarAssinaturaErro(`route:${req.path}:${msg}`);
+  if (_deveReportar(assinatura)) {
+    emitirDiagnostico("erro_rota_express", {
+      metodo: req.method,
+      rota: req.path,
+      erro: msg,
+      stack: (err.stack || "").slice(0, 1000),
+    });
+  }
+  if (!res.headersSent) {
+    res.status(500).json({ ok: false, erro: `Erro interno: ${msg}` });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   limparLockChrome(); // garante que não há locks stale da execução anterior

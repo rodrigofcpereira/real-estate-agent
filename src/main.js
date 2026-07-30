@@ -10,6 +10,44 @@ let mainWindow = null;
 let serverPort = null;
 let serverReady = false;
 
+// ── Telemetria de erros do processo principal (Electron main) ─────────────────
+// Erros aqui são os mais críticos: app não abriu, servidor não iniciou, crash.
+// Grava no log local e tenta enviar ao renderer para que ele grave no Firestore.
+const MAIN_LOG = path.join(app.getPath("userData"), "main_errors.log");
+
+function logMain(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(MAIN_LOG, line); } catch(_) {}
+}
+
+function enviarDiagParaRenderer(tipo, dados) {
+  try {
+    if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.executeJavaScript(
+        `if(typeof registrarDiagnostico==='function'){registrarDiagnostico({tipo:${JSON.stringify(tipo)},dados:${JSON.stringify(dados)},timestamp:${Date.now()}})}`
+      ).catch(() => {});
+    }
+  } catch (_) {}
+}
+
+process.on("uncaughtException", (err) => {
+  const msg = err?.message || String(err);
+  logMain(`💥 [main] uncaughtException: ${msg}\n${err?.stack || ""}`);
+  enviarDiagParaRenderer("main_uncaught_exception", {
+    erro: msg,
+    stack: (err?.stack || "").slice(0, 1000),
+  });
+});
+
+process.on("unhandledRejection", (reason) => {
+  const msg = reason?.message || String(reason);
+  logMain(`💥 [main] unhandledRejection: ${msg}\n${reason?.stack || ""}`);
+  enviarDiagParaRenderer("main_unhandled_rejection", {
+    erro: msg,
+    stack: (reason?.stack || "").slice(0, 1000),
+  });
+});
+
 // ── Garante UMA única instância ──────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 
