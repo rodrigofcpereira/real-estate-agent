@@ -2560,7 +2560,9 @@ function carregarPropriedades() {
         propriedades.push(data);
       });
       renderizarPropriedades();
-      recalcularStorageTotal();
+      // Nota: recalcularStorageTotal() foi removido daqui propositalmente.
+      // O storageUsed é mantido de forma incremental (upload soma, delete subtrai).
+      // Chamar recalcularStorageTotal() aqui sobrescrevia os bytes recém-adicionados.
     }, error => {
       console.error("Erro ao carregar propriedades:", error);
     });
@@ -2773,7 +2775,8 @@ async function salvarProp(event) {
   if (btn) { btn.disabled = true; btn.textContent = "Salvando..."; }
 
   try {
-    // Upload das fotos (base64 → Storage)
+    // Upload das fotos novas (data URLs) → Firebase Storage; fotos existentes (objetos) passam direto
+    // Nota: fotos removidas no form já foram deletadas do Storage e contabilizadas por removerFotoForm()
     const fotosUrls = await uploadFotos(fotosTemp);
     prop.fotos = fotosUrls;
 
@@ -2944,9 +2947,23 @@ function renderizarFotosForm() {
   grid.innerHTML = thumbs + addBtn;
 }
 
-function removerFotoForm(idx) {
+async function removerFotoForm(idx) {
+  const foto = fotosTemp[idx];
   fotosTemp.splice(idx, 1);
   renderizarFotosForm();
+
+  // Se a foto já estava no Firebase Storage, deleta o arquivo imediatamente
+  if (foto && typeof foto === 'object' && foto.url &&
+      typeof foto.url === 'string' && foto.url.startsWith('https://firebasestorage')) {
+    try {
+      const fileRef = storage.refFromURL(foto.url);
+      await fileRef.delete();
+      // Subtrai bytes do contador ao remover durante edição
+      if (foto.size > 0) await atualizarStorageUsado(-foto.size);
+    } catch (err) {
+      console.warn('Falha ao deletar foto do Storage ao remover do form:', err.code, foto.url);
+    }
+  }
 }
 
 // ---- Carrossel do card ----
@@ -2992,10 +3009,30 @@ function confirmarRemoverProp(idx) {
     const docId = pDel._firestoreId || pDel.id;
     let bytesLiberados = 0;
     const fotosDel = Array.isArray(pDel.fotos) ? pDel.fotos : (pDel.foto ? [pDel.foto] : []);
-    for (const f of fotosDel) {
-      if (typeof f === 'object' && f !== null && f.size) bytesLiberados += f.size;
-    }
+
     try {
+      // Remove cada arquivo do Firebase Storage antes de apagar o documento
+      for (const f of fotosDel) {
+        const url = typeof f === 'object' && f !== null ? f.url : f;
+        const size = typeof f === 'object' && f !== null && f.size ? f.size : 0;
+
+        if (url && typeof url === 'string' && url.startsWith('https://firebasestorage')) {
+          try {
+            // Extrai a referência a partir da URL pública do Firebase Storage
+            const fileRef = storage.refFromURL(url);
+            await fileRef.delete();
+            bytesLiberados += size;
+          } catch (storageErr) {
+            // Arquivo pode já ter sido deletado ou URL inválida — ignora
+            console.warn('Falha ao deletar arquivo do Storage:', storageErr.code, url);
+            bytesLiberados += size; // subtrai do contador mesmo assim (arquivo não existe mais)
+          }
+        } else if (size > 0) {
+          // URL não é do Firebase Storage (ex: formato antigo) — só subtrai o contador
+          bytesLiberados += size;
+        }
+      }
+
       await db.collection("propriedades").doc(docId).delete();
       if (bytesLiberados > 0) await atualizarStorageUsado(-bytesLiberados);
       mostrarToast("🗑️ Propriedade removida.", "ok");
