@@ -237,6 +237,8 @@ async function iniciarWhatsApp() {
         "--disable-background-timer-throttling",     // evita throttle de timers em segundo plano
         "--disable-renderer-backgrounding",          // mantém renderer ativo mesmo em background
         "--disable-backgrounding-occluded-windows",  // evita throttle de janelas ocultas
+        "--disable-features=TranslateUI,BackForwardCache,TabDiscarding", // impede Chrome de descartar tabs/frames por falta de RAM
+        "--aggressive-cache-discard=false",          // não descarta cache agressivamente
         "--renderer-process-limit=1",                // só 1 renderer → economiza ~100MB RAM
         "--disk-cache-size=52428800",                // cache de disco máx 50MB (padrão ~320MB)
         "--js-flags=--max-old-space-size=192",       // heap V8 máx 192MB (1GB VPS tem 193MB livres)
@@ -455,6 +457,40 @@ async function resolverNumero(telefone) {
     return cached;
   }
 
+  // ── Verifica se a sessão do WA está viva antes de tentar consultar ──
+  // Se o frame foi desanexado (erro "detached Frame"), nenhuma consulta vai
+  // funcionar — todas vão dar timeout de 45s sem resultado. Melhor detectar
+  // isso cedo e falhar rápido com um erro claro.
+  try {
+    const state = await Promise.race([
+      clienteWA.getState(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout_state")), 10000))
+    ]);
+    if (!state || state !== "CONNECTED") {
+      logFile(`⚠️  WhatsApp em estado "${state}" — não é possível verificar números agora.`);
+      emitirDiagnostico("sessao_invalida_verificacao", { estado: state, numero });
+      return null;
+    }
+  } catch (stateErr) {
+    const msg = stateErr?.message || String(stateErr);
+    if (msg.includes("detached") || msg.includes("destroyed") || msg.includes("timeout_state")) {
+      logFile(`❌ Sessão do WhatsApp inválida (frame detached/destruído). Disparando reconexão...`);
+      emitirDiagnostico("frame_detached_reconexao", { erro: msg, numero });
+      // Dispara reconexão em background (não bloqueia o retorno)
+      destruirCliente().then(() => {
+        iniciando = false;
+        setTimeout(() => iniciarWhatsApp(), 3000);
+      }).catch(() => {});
+      whatsappStatus = "conectando";
+      io.emit("wa:status", { status: "conectando", message: "Reconectando (sessão caiu)..." });
+      return null;
+    }
+    // Outro erro — continua tentando normalmente
+    logFile(`⚠️  Erro ao checar estado do WA: ${msg} — tentando verificar número mesmo assim.`);
+  }
+
+  // ── Warm-up e tentativas de verificação ──
+
   // ── Warm-up: nos primeiros segundos após "ready", o getNumberId pode
   // retornar falso-negativo (null) mesmo para números válidos, porque o
   // WhatsApp Web ainda está sincronizando o índice de contatos internamente.
@@ -508,6 +544,19 @@ async function resolverNumero(telefone) {
           if (tentativa < maxTentativas) {
             await new Promise(r => setTimeout(r, esperaEntreTentativas));
           }
+        } else if (err.message?.includes("detached") || err.message?.includes("destroyed")) {
+          // Frame morto — não adianta tentar de novo, vai dar timeout em todas
+          logFile(`❌ Frame detached durante verificação de ${candidato} — abortando tentativas.`);
+          historicoTentativas.push({ candidato, tentativa, resultado: "frame_detached", erro: err.message });
+          emitirDiagnostico("frame_detached_verificacao", { erro: err.message, numero, candidato });
+          // Dispara reconexão
+          destruirCliente().then(() => {
+            iniciando = false;
+            setTimeout(() => iniciarWhatsApp(), 3000);
+          }).catch(() => {});
+          whatsappStatus = "conectando";
+          io.emit("wa:status", { status: "conectando", message: "Reconectando (sessão caiu)..." });
+          return null; // sai imediatamente da função inteira
         } else {
           logFile(`⚠️  Erro ao verificar ${candidato}: ${err.message}`);
           historicoTentativas.push({ candidato, tentativa, resultado: "erro", erro: err.message });
