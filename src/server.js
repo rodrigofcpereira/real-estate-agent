@@ -692,7 +692,7 @@ function gerarJobId() {
 // Nunca aborta o lote por causa de limite de hora/dia — em vez disso PAUSA
 // e avisa o usuário (via evento) até poder continuar, ou até esgotar o
 // limite diário (aí sim marca o restante como pendente e encerra o job).
-async function processarLoteBackground(jobId, mensagens, medias) {
+async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) {
   const jobState = _batchJobs.get(jobId);
   const resultados = [];
   const total = mensagens.length;
@@ -700,6 +700,7 @@ async function processarLoteBackground(jobId, mensagens, medias) {
   const emitProgresso = (extra = {}) => {
     io.emit("disparo:progresso", {
       jobId,
+      transmissaoId,
       total,
       enviados: resultados.filter(r => r.ok).length,
       erros: resultados.filter(r => !r.ok).length,
@@ -756,7 +757,7 @@ async function processarLoteBackground(jobId, mensagens, medias) {
       resolvido = await resolverNumero(item.telefone || "");
     } catch (err) {
       resultados.push({ numero: item.telefone, ok: false, erro: "Erro ao verificar número" });
-      emitProgresso();
+      emitProgresso({ idx, itemStatus: "erro", itemErro: "Erro ao verificar número" });
       continue;
     }
 
@@ -766,7 +767,7 @@ async function processarLoteBackground(jobId, mensagens, medias) {
         ok: false,
         erro: `Número não registrado no WhatsApp (${item.telefone})`
       });
-      emitProgresso();
+      emitProgresso({ idx, itemStatus: "erro", itemErro: `Número não registrado no WhatsApp (${item.telefone})` });
       continue;
     }
 
@@ -796,9 +797,11 @@ async function processarLoteBackground(jobId, mensagens, medias) {
 
       console.log(`📤 Enviado → ${resolvido.numero} (${medias.length} foto(s))`);
       resultados.push({ numero: resolvido.numero, ok: true });
+      emitProgresso({ idx, itemStatus: "enviado" });
     } catch (err) {
       console.error(`❌ Falha → ${resolvido.numero}:`, err.message);
       resultados.push({ numero: resolvido.numero, ok: false, erro: `Falha no envio: ${err.message}` });
+      emitProgresso({ idx, itemStatus: "erro", itemErro: `Falha no envio: ${err.message}` });
       emitirDiagnostico("falha_envio_lote", {
         jobId,
         numero: resolvido.numero,
@@ -808,8 +811,6 @@ async function processarLoteBackground(jobId, mensagens, medias) {
         totalLote: total,
       });
     }
-
-    emitProgresso();
 
     // ── Anti-ban: delay humanizado entre destinatários ──
     if (idx < total - 1) {
@@ -824,13 +825,13 @@ async function processarLoteBackground(jobId, mensagens, medias) {
   const qtdErr = resultados.filter(r => !r.ok).length;
   console.log(`✅ Lote concluído: ${qtdOk} enviados, ${qtdErr} com erro`);
 
-  io.emit("disparo:concluido", { jobId, resultados, qtdOk, qtdErr });
+  io.emit("disparo:concluido", { jobId, transmissaoId, resultados, qtdOk, qtdErr });
   _batchJobs.delete(jobId);
 }
 
 // ---- API: Enviar mensagens em lote (inicia job em background, retorna jobId imediatamente) ----
 app.post("/api/send-batch", async (req, res) => {
-  const { mensagens, fotos } = req.body;   // fotos = array de dataURL base64 (opcional)
+  const { mensagens, fotos, transmissaoId } = req.body;
 
   if (!mensagens || !Array.isArray(mensagens)) {
     return res.status(400).json({ ok: false, erro: "mensagens deve ser um array" });
@@ -853,18 +854,16 @@ app.post("/api/send-batch", async (req, res) => {
   const medias = mediasRaw.filter(Boolean);
 
   const jobId = gerarJobId();
-  _batchJobs.set(jobId, { cancelado: false });
+  _batchJobs.set(jobId, { cancelado: false, transmissaoId: transmissaoId || null });
 
-  // Responde IMEDIATAMENTE com o jobId — o front acompanha o progresso via
-  // socket ("disparo:progresso" / "disparo:concluido"), sem depender de uma
-  // única requisição HTTP longa que trava a UI por minutos/horas.
-  res.json({ ok: true, jobId, total: mensagens.length });
+  // Responde IMEDIATAMENTE com o jobId
+  res.json({ ok: true, jobId, total: mensagens.length, transmissaoId: transmissaoId || null });
 
-  // Processa em background (não bloqueia a resposta HTTP acima)
-  processarLoteBackground(jobId, mensagens, medias).catch(err => {
+  // Processa em background
+  processarLoteBackground(jobId, mensagens, medias, transmissaoId || null).catch(err => {
     logFile(`💥 Erro no job de disparo ${jobId}: ${err.message}`);
     emitirDiagnostico("falha_job_disparo", { jobId, erro: err.message, totalMensagens: mensagens.length });
-    io.emit("disparo:concluido", { jobId, erro: err.message });
+    io.emit("disparo:concluido", { jobId, transmissaoId: transmissaoId || null, erro: err.message });
     _batchJobs.delete(jobId);
   });
 });

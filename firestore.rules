@@ -26,6 +26,20 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // ── Transmissões (fila de trabalho persistente de disparos) ──────────────
+    // O usuário pode criar, ler, e atualizar suas próprias transmissões.
+    // Cada transmissão guarda o status de cada destinatário (pendente/enviado/erro)
+    // para poder retomar de onde parou se o app fechar ou a internet cair.
+    match /transmissoes/{transmissaoId} {
+      allow create: if request.auth != null;
+      allow read:   if request.auth != null
+                    && resource.data.usuarioUid == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.usuarioUid == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.usuarioUid == request.auth.uid;
+    }
+
     // ── Diagnósticos (telemetria de erros para debug remoto) ────────────────────
     // O app grava aqui automaticamente quando algo dá errado (número não
     // encontrado, timeout, falha de envio, desconexão, etc). Só permite criar

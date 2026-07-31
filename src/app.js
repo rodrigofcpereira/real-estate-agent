@@ -98,6 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function iniciarCarregamento() {
   carregarDados();
   carregarPropriedades();
+  carregarTransmissoes();
 }
 
 // ---- Carregar dados do Firestore (tempo real) ----
@@ -1140,23 +1141,64 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     lista.appendChild(div);
   });
 
-  // Botão de cancelar no rodapé do modal (mostrado só durante o envio)
+  // Botão de cancelar
   const btnCancelar = document.getElementById("disparo-cancelar-btn");
   if (btnCancelar) btnCancelar.style.display = "inline-flex";
 
   document.getElementById("modalMsg").style.display = "flex";
 
-  // Enviar em lote via API — o servidor responde IMEDIATAMENTE com um jobId
-  // e processa em background. O progresso chega via socket ("disparo:progresso").
+  // ── Criar transmissão no Firestore (persistência) ──
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
   const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r), nome: r.nome }));
 
+  const destinatarios = clientes.map(r => ({
+    telefone: r.telefone,
+    nome: r.nome || "",
+    apartamento: r.apartamento || "",
+    status: "pendente",
+    erro: null,
+    enviadoEm: null,
+  }));
+
+  let transmissaoId = null;
+  try {
+    if (currentUser && db) {
+      const docRef = await db.collection("transmissoes").add({
+        titulo,
+        status: "em_andamento",
+        criadaEm: firebase.firestore.FieldValue.serverTimestamp(),
+        totalDestinatarios: clientes.length,
+        enviados: 0,
+        erros: 0,
+        pendentes: clientes.length,
+        mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
+        midias: fotosArray.length,
+        destinatarios,
+        usuarioUid: currentUser.uid,
+        usuarioEmail: currentUser.email || null,
+        appVersion: window.APP_VERSION || "desconhecida",
+      });
+      transmissaoId = docRef.id;
+
+      // Soma ao storageUsed (estimativa: ~200 bytes por destinatário + overhead)
+      const bytesEstimados = 500 + (clientes.length * 200);
+      await atualizarStorageUsado(bytesEstimados);
+    }
+  } catch (err) {
+    console.error("Erro ao criar transmissão no Firestore:", err.message);
+    // Não impede o envio — a transmissão funciona sem persistência, só não pode retomar
+  }
+
+  // Guarda o transmissaoId para os handlers de progresso
+  window._transmissaoAtual = transmissaoId;
+
+  // Chamar o backend com o transmissaoId
   let data;
   try {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: payload, fotos: fotosArray })
+      body: JSON.stringify({ mensagens: payload, fotos: fotosArray, transmissaoId })
     });
 
     if (!res.ok) {
@@ -1180,11 +1222,105 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     document.getElementById("modalTexto").innerHTML =
       `<span class="send-error-banner">❌ Falha no envio — ${msgErr}</span>`;
     if (btnCancelar) btnCancelar.style.display = "none";
+
+    // Atualiza transmissão como pausada (para poder retomar depois)
+    if (transmissaoId && db) {
+      try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "pausada" }); } catch(_) {}
+    }
     return;
   }
 
-  // Guarda o jobId — os listeners globais de socket (disparo:progresso /
-  // disparo:concluido) vão atualizar a UI conforme o backend processa.
+  disparoJobAtual = data.jobId;
+}
+
+// ── Retomar transmissão pendente/pausada ──
+async function retomarTransmissao(transmissaoId) {
+  if (!currentUser || !db) return mostrarToast("Faça login primeiro", "err");
+  if (!clienteWA || waStatus !== "pronto") return mostrarToast("Conecte o WhatsApp primeiro", "err");
+
+  let doc;
+  try {
+    doc = await db.collection("transmissoes").doc(transmissaoId).get();
+  } catch (err) {
+    return mostrarToast("Erro ao carregar transmissão", "err");
+  }
+  if (!doc.exists) return mostrarToast("Transmissão não encontrada", "err");
+
+  const trans = doc.data();
+  if (trans.status !== "pausada" && trans.status !== "em_andamento") {
+    return mostrarToast("Esta transmissão já foi concluída ou cancelada", "info");
+  }
+
+  // Filtra apenas os pendentes
+  const pendentes = [];
+  const indicesPendentes = [];
+  trans.destinatarios.forEach((d, i) => {
+    if (d.status === "pendente") {
+      pendentes.push(d);
+      indicesPendentes.push(i);
+    }
+  });
+
+  if (pendentes.length === 0) {
+    mostrarToast("Todos os destinatários já foram processados", "ok");
+    try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "concluida" }); } catch(_) {}
+    return;
+  }
+
+  // Monta UI como um disparo normal
+  document.getElementById("modalTitulo").textContent = `▶️ Retomando: ${trans.titulo}`;
+  document.getElementById("modalTexto").textContent = `Retomando ${pendentes.length} destinatário(s) pendente(s)...`;
+  removerBannerDisparo();
+  const lista = document.getElementById("modalLista");
+  lista.innerHTML = "";
+  lista.className = "send-progress";
+  disparoClientesRef = pendentes;
+
+  pendentes.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "send-item";
+    div.id = "send-item-" + i;
+    div.innerHTML = `
+      <span class="send-item-name">${r.nome} <small style="opacity:.6">· Apto ${r.apartamento}</small></span>
+      <span class="send-item-status send-pending" id="send-status-${i}">⏳ Aguardando</span>
+    `;
+    lista.appendChild(div);
+  });
+
+  const btnCancelar = document.getElementById("disparo-cancelar-btn");
+  if (btnCancelar) btnCancelar.style.display = "inline-flex";
+  document.getElementById("modalMsg").style.display = "flex";
+
+  window._transmissaoAtual = transmissaoId;
+  window._transmissaoIndicesPendentes = indicesPendentes; // mapeia idx local → idx no doc original
+
+  // Atualiza status para em_andamento
+  try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "em_andamento" }); } catch(_) {}
+
+  // Monta payload só dos pendentes
+  const payload = pendentes.map(r => ({ telefone: r.telefone, mensagem: trans.mensagemTemplate, nome: r.nome }));
+
+  let data;
+  try {
+    const res = await fetch(`${API_BASE}/api/send-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensagens: payload, fotos: [], transmissaoId })
+    });
+    if (!res.ok) {
+      let errMsg = `Erro ${res.status}`;
+      try { const e = await res.json(); errMsg = e.erro || errMsg; } catch(_) {}
+      throw new Error(errMsg);
+    }
+    data = await res.json();
+  } catch (err) {
+    document.getElementById("modalTexto").innerHTML =
+      `<span class="send-error-banner">❌ Falha ao retomar — ${err.message}</span>`;
+    if (btnCancelar) btnCancelar.style.display = "none";
+    try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "pausada" }); } catch(_) {}
+    return;
+  }
+
   disparoJobAtual = data.jobId;
 }
 
@@ -1199,42 +1335,61 @@ async function cancelarDisparoAtual() {
   }
 }
 
-// ---- Listeners globais de progresso do disparo (registrados uma única vez) ----
+// ---- Listeners globais de progresso do disparo ----
 function handleDisparoProgresso(info) {
   if (!info || info.jobId !== disparoJobAtual) return;
 
-  const clientes = disparoClientesRef;
+  // Atualiza item visual individual
+  if (typeof info.idx === "number" && info.itemStatus) {
+    const el = document.getElementById("send-status-" + info.idx);
+    if (el) {
+      if (info.itemStatus === "enviado") {
+        el.textContent = "✅ Enviado";
+        el.className = "send-item-status send-ok";
+      } else if (info.itemStatus === "erro") {
+        el.textContent = "❌ Erro";
+        el.className = "send-item-status send-err";
+        el.title = info.itemErro || "";
+        const item = document.getElementById("send-item-" + info.idx);
+        if (item && !item.nextElementSibling?.classList?.contains("send-item-error-detail")) {
+          const det = document.createElement("div");
+          det.className = "send-item-error-detail";
+          det.textContent = `↳ ${info.itemErro || "erro desconhecido"}`;
+          item.after(det);
+        }
+      }
+    }
 
-  // Atualiza o item específico sendo processado agora, se aplicável
+    // Atualiza o Firestore em tempo real (destinatarios[idx].status)
+    _atualizarDestinatarioFirestore(info.idx, info.itemStatus, info.itemErro);
+  }
+
+  // Atualiza item sendo processado agora
   if (info.status === "verificando_numero" || info.status === "enviando") {
-    const idx = info.processados; // próximo índice não processado ainda
+    const idx = info.processados;
     const el = document.getElementById("send-status-" + idx);
     if (el && el.className.includes("send-pending")) {
-      el.textContent = info.status === "enviando" ? "📤 Enviando..." : "🔎 Verificando número...";
+      el.textContent = info.status === "enviando" ? "📤 Enviando..." : "🔎 Verificando...";
     }
   }
 
-  // Marca os itens já processados conforme o array de resultados mais recente
-  // (o backend não envia o array completo a cada evento; então mapeamos pelo
-  // contador "processados" apenas para o item atual quando disponível)
-
-  // Banner de status conforme a fase do processamento
+  // Banner de status
   if (info.status === "aguardando_limite") {
     atualizarBannerDisparo(
       `⏸️ Pausado temporariamente — ${info.motivo}${info.aguardarMs ? ` (retoma em ~${formatarTempo(info.aguardarMs)})` : ""}`,
       "warn"
     );
   } else if (info.status === "pausa_curta") {
-    atualizarBannerDisparo(`⏳ Aguardando ${formatarTempo(info.aguardarMs)} antes do próximo envio (ritmo humano anti-bloqueio)...`, "info");
+    atualizarBannerDisparo(`⏳ Aguardando ${formatarTempo(info.aguardarMs)} antes do próximo envio...`, "info");
   } else if (info.status === "pausado_definitivo") {
-    atualizarBannerDisparo(`⏸️ ${info.motivo} As mensagens restantes ficarão pendentes.`, "err");
+    atualizarBannerDisparo(`⏸️ ${info.motivo}`, "err");
   } else if (info.status === "cancelado") {
     atualizarBannerDisparo("⏹️ Envio cancelado pelo usuário.", "warn");
-  } else {
+  } else if (!info.itemStatus) {
     removerBannerDisparo();
   }
 
-  // Atualiza contador no topo
+  // Contador no topo
   document.getElementById("modalTexto").textContent =
     `Enviando... ${info.enviados} enviada(s), ${info.erros} com erro, ${info.total - info.processados} restante(s).`;
 }
@@ -1249,35 +1404,27 @@ function handleDisparoConcluido(info) {
   if (info.erro) {
     document.getElementById("modalTexto").innerHTML =
       `<span class="send-error-banner">❌ Falha no envio — ${info.erro}</span>`;
+    _finalizarTransmissaoFirestore("pausada");
     return;
   }
 
   const resultados = info.resultados || [];
-  const clientes = disparoClientesRef;
   let qtdOk = 0, qtdErr = 0, qtdPendente = 0;
 
   resultados.forEach((r, i) => {
     const el = document.getElementById("send-status-" + i);
-    if (!el) return;
-    if (r.ok) {
-      el.textContent = "✅ Enviado";
-      el.className   = "send-item-status send-ok";
-      qtdOk++;
-    } else {
-      const motivo = r.erro || "número inválido ou bloqueado";
-      el.textContent = r.pendente ? "⏸️ Pendente" : "❌ Erro";
-      el.className   = r.pendente ? "send-item-status send-pending" : "send-item-status send-err";
-      el.title       = motivo;
-      if (r.pendente) qtdPendente++; else qtdErr++;
-
-      const item = document.getElementById("send-item-" + i);
-      if (item && !item.nextElementSibling?.classList?.contains("send-item-error-detail")) {
-        const det = document.createElement("div");
-        det.className = "send-item-error-detail";
-        det.textContent = `↳ ${motivo}`;
-        item.after(det);
+    if (el) {
+      if (r.ok) {
+        el.textContent = "✅ Enviado";
+        el.className = "send-item-status send-ok";
+      } else {
+        el.textContent = r.pendente ? "⏸️ Pendente" : "❌ Erro";
+        el.className = r.pendente ? "send-item-status send-pending" : "send-item-status send-err";
       }
     }
+    if (r.ok) qtdOk++;
+    else if (r.pendente) qtdPendente++;
+    else qtdErr++;
   });
 
   removerBannerDisparo();
@@ -1285,17 +1432,144 @@ function handleDisparoConcluido(info) {
   const partes = [];
   if (qtdOk > 0) partes.push(`✅ ${qtdOk} enviada(s)`);
   if (qtdErr > 0) partes.push(`❌ ${qtdErr} com erro`);
-  if (qtdPendente > 0) partes.push(`⏸️ ${qtdPendente} pendente(s) — tente novamente mais tarde`);
+  if (qtdPendente > 0) partes.push(`⏸️ ${qtdPendente} pendente(s)`);
 
-  const textoFinal = partes.length > 0 ? partes.join(" · ") : "Nenhuma mensagem processada.";
-  const tipoClasse = qtdErr === 0 && qtdPendente === 0
-    ? "send-summary-ok"
-    : qtdOk === 0
-      ? "send-summary-err"
-      : "send-summary-warn";
+  const textoFinal = partes.join(" · ") || "Nenhuma mensagem processada.";
+  const tipoClasse = qtdErr === 0 && qtdPendente === 0 ? "send-summary-ok" : qtdOk === 0 ? "send-summary-err" : "send-summary-warn";
+  document.getElementById("modalTexto").innerHTML = `<span class="${tipoClasse}">${textoFinal}</span>`;
 
-  document.getElementById("modalTexto").innerHTML =
-    `<span class="${tipoClasse}">${textoFinal}</span>`;
+  // Finaliza transmissão no Firestore
+  const statusFinal = qtdPendente > 0 ? "pausada" : "concluida";
+  _finalizarTransmissaoFirestore(statusFinal);
+}
+
+// ── Helpers de persistência no Firestore ──
+async function _atualizarDestinatarioFirestore(localIdx, status, erro) {
+  const transmissaoId = window._transmissaoAtual;
+  if (!transmissaoId || !db) return;
+
+  try {
+    // Se é uma retomada, o idx local não corresponde ao idx no doc original
+    const realIdx = window._transmissaoIndicesPendentes
+      ? window._transmissaoIndicesPendentes[localIdx]
+      : localIdx;
+
+    if (typeof realIdx !== "number") return;
+
+    const docRef = db.collection("transmissoes").doc(transmissaoId);
+    const doc = await docRef.get();
+    if (!doc.exists) return;
+
+    const data = doc.data();
+    const dest = data.destinatarios;
+    if (!dest || !dest[realIdx]) return;
+
+    dest[realIdx].status = status === "enviado" ? "enviado" : "erro";
+    dest[realIdx].erro = status === "erro" ? (erro || null) : null;
+    dest[realIdx].enviadoEm = status === "enviado" ? new Date().toISOString() : null;
+
+    const enviados = dest.filter(d => d.status === "enviado").length;
+    const erros = dest.filter(d => d.status === "erro").length;
+    const pendentes = dest.filter(d => d.status === "pendente").length;
+
+    await docRef.update({ destinatarios: dest, enviados, erros, pendentes });
+  } catch (err) {
+    console.error("Erro ao atualizar destinatário no Firestore:", err.message);
+  }
+}
+
+async function _finalizarTransmissaoFirestore(statusFinal) {
+  const transmissaoId = window._transmissaoAtual;
+  if (!transmissaoId || !db) return;
+  window._transmissaoAtual = null;
+  window._transmissaoIndicesPendentes = null;
+
+  try {
+    await db.collection("transmissoes").doc(transmissaoId).update({ status: statusFinal });
+  } catch (err) {
+    console.error("Erro ao finalizar transmissão no Firestore:", err.message);
+  }
+
+  // Recarrega a lista de transmissões no dashboard
+  carregarTransmissoes();
+}
+
+// ==============================================
+//  PAINEL DE TRANSMISSÕES (dashboard)
+// ==============================================
+
+let _transmissoesListener = null;
+
+function carregarTransmissoes() {
+  if (!currentUser || !db) return;
+
+  // Listener em tempo real — atualiza sozinho quando o doc muda
+  if (_transmissoesListener) _transmissoesListener();
+
+  _transmissoesListener = db.collection("transmissoes")
+    .where("usuarioUid", "==", currentUser.uid)
+    .orderBy("criadaEm", "desc")
+    .limit(20)
+    .onSnapshot(snap => {
+      const container = document.getElementById("transmissoes-lista");
+      const vazio = document.getElementById("transmissoes-vazio");
+      const countEl = document.getElementById("transmissoesCount");
+      if (!container) return;
+
+      if (snap.empty) {
+        container.innerHTML = "";
+        container.appendChild(vazio);
+        if (vazio) vazio.style.display = "flex";
+        if (countEl) countEl.textContent = "0";
+        return;
+      }
+
+      if (vazio) vazio.style.display = "none";
+      if (countEl) countEl.textContent = snap.size;
+
+      container.innerHTML = snap.docs.map(doc => {
+        const t = doc.data();
+        const id = doc.id;
+        const data = t.criadaEm ? t.criadaEm.toDate().toLocaleDateString("pt-BR") : "—";
+        const hora = t.criadaEm ? t.criadaEm.toDate().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+        const total = t.totalDestinatarios || 0;
+        const enviados = t.enviados || 0;
+        const erros = t.erros || 0;
+        const pendentes = t.pendentes || 0;
+        const pct = total > 0 ? Math.round((enviados / total) * 100) : 0;
+
+        const statusMap = {
+          em_andamento: { label: "Enviando...", cls: "trans-status-progress", icon: "📤" },
+          concluida:    { label: "Concluída",   cls: "trans-status-ok",       icon: "✅" },
+          pausada:      { label: "Pausada",     cls: "trans-status-warn",     icon: "⏸️" },
+          cancelada:    { label: "Cancelada",   cls: "trans-status-err",      icon: "⏹️" },
+        };
+        const s = statusMap[t.status] || statusMap.pausada;
+
+        const podeContinuar = t.status === "pausada" && pendentes > 0;
+
+        return `
+          <div class="trans-item">
+            <div class="trans-item-header">
+              <div class="trans-item-info">
+                <span class="trans-item-titulo">${t.titulo || "Sem título"}</span>
+                <span class="trans-item-data">${data} ${hora}</span>
+              </div>
+              <span class="trans-status ${s.cls}">${s.icon} ${s.label}</span>
+            </div>
+            <div class="trans-item-progress">
+              <div class="trans-progress-bar">
+                <div class="trans-progress-fill" style="width:${pct}%"></div>
+              </div>
+              <span class="trans-progress-text">${enviados}/${total} enviadas${erros > 0 ? ` · ${erros} erro(s)` : ""}${pendentes > 0 ? ` · ${pendentes} pendente(s)` : ""}</span>
+            </div>
+            ${podeContinuar ? `<button class="btn btn-primary btn-sm trans-btn-continuar" onclick="retomarTransmissao('${id}')">▶️ Continuar envio (${pendentes} restantes)</button>` : ""}
+          </div>
+        `;
+      }).join("");
+    }, err => {
+      console.error("Erro ao carregar transmissões:", err.message);
+    });
 }
 
 // ==============================================

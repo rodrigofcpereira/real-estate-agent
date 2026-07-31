@@ -2807,3 +2807,68 @@ tbody tr:hover .row-actions { opacity: 1; }
   word-break: break-all;
 }
 
+
+/* ===== Painel de Transmissões (dashboard) ===== */
+.transmissoes-section { margin-top: 24px; }
+.transmissoes-lista { padding: 0; }
+.transmissoes-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 8px;
+}
+.transmissoes-vazio p { font-size: .92rem; font-weight: 500; margin: 0; }
+.transmissoes-vazio span { font-size: .8rem; }
+
+.trans-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.trans-item:last-child { border-bottom: none; }
+.trans-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.trans-item-info { display: flex; flex-direction: column; gap: 2px; }
+.trans-item-titulo { font-weight: 600; font-size: .88rem; color: var(--text); }
+.trans-item-data { font-size: .75rem; color: var(--text-muted); }
+.trans-status {
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.trans-status-ok { background: #f0fdf4; color: #16a34a; }
+.trans-status-warn { background: #fffbeb; color: #92400e; }
+.trans-status-err { background: #fef2f2; color: #b91c1c; }
+.trans-status-progress { background: #eef2ff; color: #4338ca; }
+
+.trans-item-progress { margin-bottom: 8px; }
+.trans-progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.trans-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 99px;
+  transition: width .3s ease;
+}
+.trans-progress-text { font-size: .75rem; color: var(--text-muted); }
+.trans-btn-continuar { margin-top: 6px; font-size: .78rem; }
+
+@media (max-width: 768px) {
+  .trans-item { padding: 12px 14px; }
+  .trans-item-titulo { font-size: .82rem; }
+}

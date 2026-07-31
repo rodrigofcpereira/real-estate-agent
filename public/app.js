@@ -4,16 +4,27 @@
 // =============================================
 
 // ---- Servidor backend ----
-const CLOUD_SERVER = 'http://34.121.96.26:3000'; // Google Cloud VM
-
+// Detecta automaticamente o ambiente:
+//   • Electron (desktop) → usa servidor local (window.location.origin = localhost)
+//   • Browser (acesso via IP/cloud) → usa o próprio servidor de origem
+//   • Configuração manual nas Configurações sobrescreve apenas no Electron
 function isElectron() {
   return typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
 }
+
 function getAPIBase() {
-  // Electron (desktop) → servidor local embutido
-  if (isElectron()) return window.location.origin;
-  // Browser (web) → servidor Google Cloud
-  return CLOUD_SERVER;
+  if (isElectron()) {
+    // App desktop: verifica se usuário configurou cloud manualmente
+    const mode = localStorage.getItem('tc_server_mode') || 'local';
+    if (mode === 'cloud') {
+      const url = (localStorage.getItem('tc_server_url') || '').trim().replace(/\/$/, '');
+      if (url) return url;
+    }
+    // Padrão: servidor local embutido no Electron
+    return window.location.origin;
+  }
+  // Browser (iPhone, PC via IP): a origem JÁ É o servidor na nuvem
+  return window.location.origin;
 }
 let API_BASE = getAPIBase();
 
@@ -30,7 +41,7 @@ let todosOsDados = [];
 let dadosFiltrados = [];
 let chipAtivo = 'todos';
 let paginaAtual = 1;
-const ITENS_POR_PAGINA = 10;
+const ITENS_POR_PAGINA = 30;
 
 // ---- Inicialização ----
 document.addEventListener("DOMContentLoaded", () => {
@@ -87,6 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function iniciarCarregamento() {
   carregarDados();
   carregarPropriedades();
+  carregarTransmissoes();
 }
 
 // ---- Carregar dados do Firestore (tempo real) ----
@@ -880,6 +892,10 @@ function atualizarStatusWA(status, msg = "") {
   if (sidebarBtn)  sidebarBtn.textContent = e.btn;
   if (sidebarWa)   sidebarWa.className = "nav-item-wa" + (e.sidebarClass ? " " + e.sidebarClass : "");
 
+  // Bottom nav WA dot
+  const bnavDot = document.getElementById("bnav-wa-dot");
+  if (bnavDot) bnavDot.className = "bnav-wa-dot " + e.dot;
+
   // Modal status bar
   if (modalDot)  modalDot.className = "wa-dot-sm " + e.dot;
   if (modalText) modalText.textContent = e.txt + (msg ? " – " + msg : "");
@@ -1032,13 +1048,13 @@ function aplicarSugestao(tipo) {
 
   if (tipo === "aniversario") {
     clientes = todosOsDados.filter(isAniversariante);
-    msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe Tech Corretor deseja um dia incrível para você!`;
+    msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
   } else if (tipo === "contrato_vencido") {
     clientes = todosOsDados.filter(isVencido);
     msgFn = r => `Olá, {nome}! Seu contrato do apartamento {apartamento} venceu em {terminoContrato}. Entre em contato para renovação.`;
   } else if (tipo === "ano_novo") {
     clientes = todosOsDados;
-    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 Nós agradecemos sua confiança e desejamos realizações incríveis!`;
+    msgFn = r => `Feliz Ano Novo, {nome}! 🎆 A equipe LF Imóveis agradece sua confiança e deseja realizações incríveis!`;
   }
 
   // Destaca o botão ativo
@@ -1125,23 +1141,64 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     lista.appendChild(div);
   });
 
-  // Botão de cancelar no rodapé do modal (mostrado só durante o envio)
+  // Botão de cancelar
   const btnCancelar = document.getElementById("disparo-cancelar-btn");
   if (btnCancelar) btnCancelar.style.display = "inline-flex";
 
   document.getElementById("modalMsg").style.display = "flex";
 
-  // Enviar em lote via API — o servidor responde IMEDIATAMENTE com um jobId
-  // e processa em background. O progresso chega via socket ("disparo:progresso").
+  // ── Criar transmissão no Firestore (persistência) ──
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
   const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r), nome: r.nome }));
 
+  const destinatarios = clientes.map(r => ({
+    telefone: r.telefone,
+    nome: r.nome || "",
+    apartamento: r.apartamento || "",
+    status: "pendente",
+    erro: null,
+    enviadoEm: null,
+  }));
+
+  let transmissaoId = null;
+  try {
+    if (currentUser && db) {
+      const docRef = await db.collection("transmissoes").add({
+        titulo,
+        status: "em_andamento",
+        criadaEm: firebase.firestore.FieldValue.serverTimestamp(),
+        totalDestinatarios: clientes.length,
+        enviados: 0,
+        erros: 0,
+        pendentes: clientes.length,
+        mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
+        midias: fotosArray.length,
+        destinatarios,
+        usuarioUid: currentUser.uid,
+        usuarioEmail: currentUser.email || null,
+        appVersion: window.APP_VERSION || "desconhecida",
+      });
+      transmissaoId = docRef.id;
+
+      // Soma ao storageUsed (estimativa: ~200 bytes por destinatário + overhead)
+      const bytesEstimados = 500 + (clientes.length * 200);
+      await atualizarStorageUsado(bytesEstimados);
+    }
+  } catch (err) {
+    console.error("Erro ao criar transmissão no Firestore:", err.message);
+    // Não impede o envio — a transmissão funciona sem persistência, só não pode retomar
+  }
+
+  // Guarda o transmissaoId para os handlers de progresso
+  window._transmissaoAtual = transmissaoId;
+
+  // Chamar o backend com o transmissaoId
   let data;
   try {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: payload, fotos: fotosArray })
+      body: JSON.stringify({ mensagens: payload, fotos: fotosArray, transmissaoId })
     });
 
     if (!res.ok) {
@@ -1165,11 +1222,105 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     document.getElementById("modalTexto").innerHTML =
       `<span class="send-error-banner">❌ Falha no envio — ${msgErr}</span>`;
     if (btnCancelar) btnCancelar.style.display = "none";
+
+    // Atualiza transmissão como pausada (para poder retomar depois)
+    if (transmissaoId && db) {
+      try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "pausada" }); } catch(_) {}
+    }
     return;
   }
 
-  // Guarda o jobId — os listeners globais de socket (disparo:progresso /
-  // disparo:concluido) vão atualizar a UI conforme o backend processa.
+  disparoJobAtual = data.jobId;
+}
+
+// ── Retomar transmissão pendente/pausada ──
+async function retomarTransmissao(transmissaoId) {
+  if (!currentUser || !db) return mostrarToast("Faça login primeiro", "err");
+  if (!clienteWA || waStatus !== "pronto") return mostrarToast("Conecte o WhatsApp primeiro", "err");
+
+  let doc;
+  try {
+    doc = await db.collection("transmissoes").doc(transmissaoId).get();
+  } catch (err) {
+    return mostrarToast("Erro ao carregar transmissão", "err");
+  }
+  if (!doc.exists) return mostrarToast("Transmissão não encontrada", "err");
+
+  const trans = doc.data();
+  if (trans.status !== "pausada" && trans.status !== "em_andamento") {
+    return mostrarToast("Esta transmissão já foi concluída ou cancelada", "info");
+  }
+
+  // Filtra apenas os pendentes
+  const pendentes = [];
+  const indicesPendentes = [];
+  trans.destinatarios.forEach((d, i) => {
+    if (d.status === "pendente") {
+      pendentes.push(d);
+      indicesPendentes.push(i);
+    }
+  });
+
+  if (pendentes.length === 0) {
+    mostrarToast("Todos os destinatários já foram processados", "ok");
+    try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "concluida" }); } catch(_) {}
+    return;
+  }
+
+  // Monta UI como um disparo normal
+  document.getElementById("modalTitulo").textContent = `▶️ Retomando: ${trans.titulo}`;
+  document.getElementById("modalTexto").textContent = `Retomando ${pendentes.length} destinatário(s) pendente(s)...`;
+  removerBannerDisparo();
+  const lista = document.getElementById("modalLista");
+  lista.innerHTML = "";
+  lista.className = "send-progress";
+  disparoClientesRef = pendentes;
+
+  pendentes.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "send-item";
+    div.id = "send-item-" + i;
+    div.innerHTML = `
+      <span class="send-item-name">${r.nome} <small style="opacity:.6">· Apto ${r.apartamento}</small></span>
+      <span class="send-item-status send-pending" id="send-status-${i}">⏳ Aguardando</span>
+    `;
+    lista.appendChild(div);
+  });
+
+  const btnCancelar = document.getElementById("disparo-cancelar-btn");
+  if (btnCancelar) btnCancelar.style.display = "inline-flex";
+  document.getElementById("modalMsg").style.display = "flex";
+
+  window._transmissaoAtual = transmissaoId;
+  window._transmissaoIndicesPendentes = indicesPendentes; // mapeia idx local → idx no doc original
+
+  // Atualiza status para em_andamento
+  try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "em_andamento" }); } catch(_) {}
+
+  // Monta payload só dos pendentes
+  const payload = pendentes.map(r => ({ telefone: r.telefone, mensagem: trans.mensagemTemplate, nome: r.nome }));
+
+  let data;
+  try {
+    const res = await fetch(`${API_BASE}/api/send-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensagens: payload, fotos: [], transmissaoId })
+    });
+    if (!res.ok) {
+      let errMsg = `Erro ${res.status}`;
+      try { const e = await res.json(); errMsg = e.erro || errMsg; } catch(_) {}
+      throw new Error(errMsg);
+    }
+    data = await res.json();
+  } catch (err) {
+    document.getElementById("modalTexto").innerHTML =
+      `<span class="send-error-banner">❌ Falha ao retomar — ${err.message}</span>`;
+    if (btnCancelar) btnCancelar.style.display = "none";
+    try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "pausada" }); } catch(_) {}
+    return;
+  }
+
   disparoJobAtual = data.jobId;
 }
 
@@ -1184,38 +1335,61 @@ async function cancelarDisparoAtual() {
   }
 }
 
-// ---- Listeners globais de progresso do disparo (registrados uma única vez) ----
+// ---- Listeners globais de progresso do disparo ----
 function handleDisparoProgresso(info) {
   if (!info || info.jobId !== disparoJobAtual) return;
 
-  const clientes = disparoClientesRef;
+  // Atualiza item visual individual
+  if (typeof info.idx === "number" && info.itemStatus) {
+    const el = document.getElementById("send-status-" + info.idx);
+    if (el) {
+      if (info.itemStatus === "enviado") {
+        el.textContent = "✅ Enviado";
+        el.className = "send-item-status send-ok";
+      } else if (info.itemStatus === "erro") {
+        el.textContent = "❌ Erro";
+        el.className = "send-item-status send-err";
+        el.title = info.itemErro || "";
+        const item = document.getElementById("send-item-" + info.idx);
+        if (item && !item.nextElementSibling?.classList?.contains("send-item-error-detail")) {
+          const det = document.createElement("div");
+          det.className = "send-item-error-detail";
+          det.textContent = `↳ ${info.itemErro || "erro desconhecido"}`;
+          item.after(det);
+        }
+      }
+    }
 
-  // Atualiza o item específico sendo processado agora, se aplicável
+    // Atualiza o Firestore em tempo real (destinatarios[idx].status)
+    _atualizarDestinatarioFirestore(info.idx, info.itemStatus, info.itemErro);
+  }
+
+  // Atualiza item sendo processado agora
   if (info.status === "verificando_numero" || info.status === "enviando") {
-    const idx = info.processados; // próximo índice não processado ainda
+    const idx = info.processados;
     const el = document.getElementById("send-status-" + idx);
     if (el && el.className.includes("send-pending")) {
-      el.textContent = info.status === "enviando" ? "📤 Enviando..." : "🔎 Verificando número...";
+      el.textContent = info.status === "enviando" ? "📤 Enviando..." : "🔎 Verificando...";
     }
   }
 
-  // Banner de status conforme a fase do processamento
+  // Banner de status
   if (info.status === "aguardando_limite") {
     atualizarBannerDisparo(
       `⏸️ Pausado temporariamente — ${info.motivo}${info.aguardarMs ? ` (retoma em ~${formatarTempo(info.aguardarMs)})` : ""}`,
       "warn"
     );
   } else if (info.status === "pausa_curta") {
-    atualizarBannerDisparo(`⏳ Aguardando ${formatarTempo(info.aguardarMs)} antes do próximo envio (ritmo humano anti-bloqueio)...`, "info");
+    atualizarBannerDisparo(`⏳ Aguardando ${formatarTempo(info.aguardarMs)} antes do próximo envio...`, "info");
   } else if (info.status === "pausado_definitivo") {
-    atualizarBannerDisparo(`⏸️ ${info.motivo} As mensagens restantes ficarão pendentes.`, "err");
+    atualizarBannerDisparo(`⏸️ ${info.motivo}`, "err");
   } else if (info.status === "cancelado") {
     atualizarBannerDisparo("⏹️ Envio cancelado pelo usuário.", "warn");
-  } else {
+  } else if (!info.itemStatus) {
     removerBannerDisparo();
   }
 
-  // Atualiza contador no topo
+  // Contador no topo
   document.getElementById("modalTexto").textContent =
     `Enviando... ${info.enviados} enviada(s), ${info.erros} com erro, ${info.total - info.processados} restante(s).`;
 }
@@ -1230,35 +1404,27 @@ function handleDisparoConcluido(info) {
   if (info.erro) {
     document.getElementById("modalTexto").innerHTML =
       `<span class="send-error-banner">❌ Falha no envio — ${info.erro}</span>`;
+    _finalizarTransmissaoFirestore("pausada");
     return;
   }
 
   const resultados = info.resultados || [];
-  const clientes = disparoClientesRef;
   let qtdOk = 0, qtdErr = 0, qtdPendente = 0;
 
   resultados.forEach((r, i) => {
     const el = document.getElementById("send-status-" + i);
-    if (!el) return;
-    if (r.ok) {
-      el.textContent = "✅ Enviado";
-      el.className   = "send-item-status send-ok";
-      qtdOk++;
-    } else {
-      const motivo = r.erro || "número inválido ou bloqueado";
-      el.textContent = r.pendente ? "⏸️ Pendente" : "❌ Erro";
-      el.className   = r.pendente ? "send-item-status send-pending" : "send-item-status send-err";
-      el.title       = motivo;
-      if (r.pendente) qtdPendente++; else qtdErr++;
-
-      const item = document.getElementById("send-item-" + i);
-      if (item && !item.nextElementSibling?.classList?.contains("send-item-error-detail")) {
-        const det = document.createElement("div");
-        det.className = "send-item-error-detail";
-        det.textContent = `↳ ${motivo}`;
-        item.after(det);
+    if (el) {
+      if (r.ok) {
+        el.textContent = "✅ Enviado";
+        el.className = "send-item-status send-ok";
+      } else {
+        el.textContent = r.pendente ? "⏸️ Pendente" : "❌ Erro";
+        el.className = r.pendente ? "send-item-status send-pending" : "send-item-status send-err";
       }
     }
+    if (r.ok) qtdOk++;
+    else if (r.pendente) qtdPendente++;
+    else qtdErr++;
   });
 
   removerBannerDisparo();
@@ -1266,17 +1432,144 @@ function handleDisparoConcluido(info) {
   const partes = [];
   if (qtdOk > 0) partes.push(`✅ ${qtdOk} enviada(s)`);
   if (qtdErr > 0) partes.push(`❌ ${qtdErr} com erro`);
-  if (qtdPendente > 0) partes.push(`⏸️ ${qtdPendente} pendente(s) — tente novamente mais tarde`);
+  if (qtdPendente > 0) partes.push(`⏸️ ${qtdPendente} pendente(s)`);
 
-  const textoFinal = partes.length > 0 ? partes.join(" · ") : "Nenhuma mensagem processada.";
-  const tipoClasse = qtdErr === 0 && qtdPendente === 0
-    ? "send-summary-ok"
-    : qtdOk === 0
-      ? "send-summary-err"
-      : "send-summary-warn";
+  const textoFinal = partes.join(" · ") || "Nenhuma mensagem processada.";
+  const tipoClasse = qtdErr === 0 && qtdPendente === 0 ? "send-summary-ok" : qtdOk === 0 ? "send-summary-err" : "send-summary-warn";
+  document.getElementById("modalTexto").innerHTML = `<span class="${tipoClasse}">${textoFinal}</span>`;
 
-  document.getElementById("modalTexto").innerHTML =
-    `<span class="${tipoClasse}">${textoFinal}</span>`;
+  // Finaliza transmissão no Firestore
+  const statusFinal = qtdPendente > 0 ? "pausada" : "concluida";
+  _finalizarTransmissaoFirestore(statusFinal);
+}
+
+// ── Helpers de persistência no Firestore ──
+async function _atualizarDestinatarioFirestore(localIdx, status, erro) {
+  const transmissaoId = window._transmissaoAtual;
+  if (!transmissaoId || !db) return;
+
+  try {
+    // Se é uma retomada, o idx local não corresponde ao idx no doc original
+    const realIdx = window._transmissaoIndicesPendentes
+      ? window._transmissaoIndicesPendentes[localIdx]
+      : localIdx;
+
+    if (typeof realIdx !== "number") return;
+
+    const docRef = db.collection("transmissoes").doc(transmissaoId);
+    const doc = await docRef.get();
+    if (!doc.exists) return;
+
+    const data = doc.data();
+    const dest = data.destinatarios;
+    if (!dest || !dest[realIdx]) return;
+
+    dest[realIdx].status = status === "enviado" ? "enviado" : "erro";
+    dest[realIdx].erro = status === "erro" ? (erro || null) : null;
+    dest[realIdx].enviadoEm = status === "enviado" ? new Date().toISOString() : null;
+
+    const enviados = dest.filter(d => d.status === "enviado").length;
+    const erros = dest.filter(d => d.status === "erro").length;
+    const pendentes = dest.filter(d => d.status === "pendente").length;
+
+    await docRef.update({ destinatarios: dest, enviados, erros, pendentes });
+  } catch (err) {
+    console.error("Erro ao atualizar destinatário no Firestore:", err.message);
+  }
+}
+
+async function _finalizarTransmissaoFirestore(statusFinal) {
+  const transmissaoId = window._transmissaoAtual;
+  if (!transmissaoId || !db) return;
+  window._transmissaoAtual = null;
+  window._transmissaoIndicesPendentes = null;
+
+  try {
+    await db.collection("transmissoes").doc(transmissaoId).update({ status: statusFinal });
+  } catch (err) {
+    console.error("Erro ao finalizar transmissão no Firestore:", err.message);
+  }
+
+  // Recarrega a lista de transmissões no dashboard
+  carregarTransmissoes();
+}
+
+// ==============================================
+//  PAINEL DE TRANSMISSÕES (dashboard)
+// ==============================================
+
+let _transmissoesListener = null;
+
+function carregarTransmissoes() {
+  if (!currentUser || !db) return;
+
+  // Listener em tempo real — atualiza sozinho quando o doc muda
+  if (_transmissoesListener) _transmissoesListener();
+
+  _transmissoesListener = db.collection("transmissoes")
+    .where("usuarioUid", "==", currentUser.uid)
+    .orderBy("criadaEm", "desc")
+    .limit(20)
+    .onSnapshot(snap => {
+      const container = document.getElementById("transmissoes-lista");
+      const vazio = document.getElementById("transmissoes-vazio");
+      const countEl = document.getElementById("transmissoesCount");
+      if (!container) return;
+
+      if (snap.empty) {
+        container.innerHTML = "";
+        container.appendChild(vazio);
+        if (vazio) vazio.style.display = "flex";
+        if (countEl) countEl.textContent = "0";
+        return;
+      }
+
+      if (vazio) vazio.style.display = "none";
+      if (countEl) countEl.textContent = snap.size;
+
+      container.innerHTML = snap.docs.map(doc => {
+        const t = doc.data();
+        const id = doc.id;
+        const data = t.criadaEm ? t.criadaEm.toDate().toLocaleDateString("pt-BR") : "—";
+        const hora = t.criadaEm ? t.criadaEm.toDate().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+        const total = t.totalDestinatarios || 0;
+        const enviados = t.enviados || 0;
+        const erros = t.erros || 0;
+        const pendentes = t.pendentes || 0;
+        const pct = total > 0 ? Math.round((enviados / total) * 100) : 0;
+
+        const statusMap = {
+          em_andamento: { label: "Enviando...", cls: "trans-status-progress", icon: "📤" },
+          concluida:    { label: "Concluída",   cls: "trans-status-ok",       icon: "✅" },
+          pausada:      { label: "Pausada",     cls: "trans-status-warn",     icon: "⏸️" },
+          cancelada:    { label: "Cancelada",   cls: "trans-status-err",      icon: "⏹️" },
+        };
+        const s = statusMap[t.status] || statusMap.pausada;
+
+        const podeContinuar = t.status === "pausada" && pendentes > 0;
+
+        return `
+          <div class="trans-item">
+            <div class="trans-item-header">
+              <div class="trans-item-info">
+                <span class="trans-item-titulo">${t.titulo || "Sem título"}</span>
+                <span class="trans-item-data">${data} ${hora}</span>
+              </div>
+              <span class="trans-status ${s.cls}">${s.icon} ${s.label}</span>
+            </div>
+            <div class="trans-item-progress">
+              <div class="trans-progress-bar">
+                <div class="trans-progress-fill" style="width:${pct}%"></div>
+              </div>
+              <span class="trans-progress-text">${enviados}/${total} enviadas${erros > 0 ? ` · ${erros} erro(s)` : ""}${pendentes > 0 ? ` · ${pendentes} pendente(s)` : ""}</span>
+            </div>
+            ${podeContinuar ? `<button class="btn btn-primary btn-sm trans-btn-continuar" onclick="retomarTransmissao('${id}')">▶️ Continuar envio (${pendentes} restantes)</button>` : ""}
+          </div>
+        `;
+      }).join("");
+    }, err => {
+      console.error("Erro ao carregar transmissões:", err.message);
+    });
 }
 
 // ==============================================
@@ -1284,10 +1577,12 @@ function handleDisparoConcluido(info) {
 // ==============================================
 function irPara(pagina) {
   ['dashboard', 'propriedades', 'configuracoes'].forEach(p => {
-    const el  = document.getElementById('page-' + p);
-    const nav = document.getElementById('nav-' + p);
-    if (el)  el.style.display = (p === pagina) ? 'flex' : 'none';
-    if (nav) nav.classList.toggle('active', p === pagina);
+    const el   = document.getElementById('page-' + p);
+    const nav  = document.getElementById('nav-' + p);
+    const bnav = document.getElementById('bnav-' + p);
+    if (el)   el.style.display = (p === pagina) ? 'flex' : 'none';
+    if (nav)  nav.classList.toggle('active', p === pagina);
+    if (bnav) bnav.classList.toggle('bnav-active', p === pagina);
   });
   if (pagina === 'propriedades') renderizarPropriedades();
   if (pagina === 'configuracoes') carregarTelaConfiguracoes();
@@ -1301,6 +1596,7 @@ let propriedades       = [];
 let propIndexRemover   = -1;
 let propIndexDisparo   = -1;
 let mensagemTipoAtivo  = null;
+let disparoMidias      = []; // data URLs de imagens/vídeos a enviar junto com a mensagem
 
 // ---- Carregar propriedades do Firestore (tempo real) ----
 function carregarPropriedades() {
@@ -1392,14 +1688,21 @@ function renderizarPropriedades() {
           <svg class="prop-img-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="52" height="52"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         </div>`;
     } else if (fotos.length === 1) {
+      const f0 = fotos[0];
       imgAreaHtml = `
         <div class="prop-img">
-          <img src="${urlFoto(fotos[0])}" alt="Foto" />
+          ${ehVideo(f0)
+            ? `<video src="${urlFoto(f0)}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
+            : `<img src="${urlFoto(f0)}" alt="Foto" />`}
         </div>`;
     } else {
-      const slides = fotos.map(f =>
-        `<div class="prop-carousel-slide"><img src="${urlFoto(f)}" alt="Foto" /></div>`
-      ).join('');
+      const slides = fotos.map(f => {
+        const src = urlFoto(f);
+        const media = ehVideo(f)
+          ? `<video src="${src}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
+          : `<img src="${src}" alt="Foto" />`;
+        return `<div class="prop-carousel-slide">${media}</div>`;
+      }).join('');
       const dots = fotos.map((_, di) =>
         `<button class="prop-carousel-dot${di === 0 ? ' active' : ''}" onclick="carouselDot(this,${i},${di})"></button>`
       ).join('');
@@ -1417,7 +1720,7 @@ function renderizarPropriedades() {
     if (p.quartos)   detalhes.push(`<span class="prop-detail-item">🛏️ ${p.quartos}</span>`);
     if (p.banheiros) detalhes.push(`<span class="prop-detail-item">🚿 ${p.banheiros}</span>`);
     if (p.vagas)     detalhes.push(`<span class="prop-detail-item">🚗 ${p.vagas}</span>`);
-    if (p.area)      detalhes.push(`<span class="prop-detail-item">📐 ${p.area}</span>`);
+    if (p.area)      detalhes.push(`<span class="prop-detail-item">📐 ${p.area} m²</span>`);
 
     const endereco = [p.endereco, p.bairro, p.cidade].filter(Boolean).join(', ');
 
@@ -1510,9 +1813,9 @@ async function salvarProp(event) {
     cidade:    document.getElementById("p-cidade").value.trim(),
     preco:     limparPreco(document.getElementById("p-preco").value),
     area:      limparDecimal(document.getElementById("p-area").value),
-    quartos:   document.getElementById("p-quartos").value,
-    banheiros: document.getElementById("p-banheiros").value,
-    vagas:     document.getElementById("p-vagas").value,
+    quartos:   document.getElementById("p-quartos").value || "0",
+    banheiros: document.getElementById("p-banheiros").value || "0",
+    vagas:     document.getElementById("p-vagas").value || "0",
     descricao: document.getElementById("p-desc").value.trim(),
   };
 
@@ -1552,6 +1855,20 @@ const ESTIMATIVA_CLIENTE = 2048; // 2 KB por cliente
 
 function urlFoto(f) {
   return typeof f === 'object' && f !== null ? f.url : f;
+}
+
+// Detecta se uma mídia (data URL, URL HTTPS ou objeto {url,type}) é vídeo
+function ehVideo(src) {
+  if (typeof src === 'object' && src !== null) {
+    if (src.type && src.type.startsWith('video/')) return true;
+    const u = src.url || '';
+    return u.startsWith('data:video') || /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(u);
+  }
+  if (typeof src === 'string') {
+    if (src.startsWith('data:video')) return true;
+    return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(src);
+  }
+  return false;
 }
 
 // ---- Storage Helpers ----
@@ -1594,7 +1911,7 @@ async function recalcularStorageTotal() {
   }
 }
 
-// ---- Upload de fotos para Firebase Storage ----
+// ---- Upload de fotos/vídeos para Firebase Storage ----
 async function uploadFotos(fotosArray) {
   const urls = [];
   let totalBytes = 0;
@@ -1608,15 +1925,20 @@ async function uploadFotos(fotosArray) {
       continue;
     }
     try {
-      const fileName = `foto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
-      const ref = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
-      const snapshot = await ref.putString(foto, "data_url");
-      const url = await snapshot.ref.getDownloadURL();
-      const tamanho = calcularTamanhoBase64(foto);
-      urls.push({ url, size: tamanho });
+      // Detecta mime type e extensão a partir do data URL
+      const mimeMatch = foto.match(/^data:([^;]+);/);
+      const mimetype  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const ext       = mimetype.split('/')[1]?.replace('jpeg','jpg').replace('quicktime','mov') || 'bin';
+      const prefix    = mimetype.startsWith('video/') ? 'video' : 'foto';
+      const fileName  = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const ref       = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
+      const snapshot  = await ref.putString(foto, "data_url");
+      const url       = await snapshot.ref.getDownloadURL();
+      const tamanho   = calcularTamanhoBase64(foto);
+      urls.push({ url, size: tamanho, type: mimetype });
       totalBytes += tamanho;
     } catch (err) {
-      console.error("Erro ao fazer upload de foto:", err);
+      console.error("Erro ao fazer upload de mídia:", err);
     }
   }
   if (totalBytes > 0) await atualizarStorageUsado(totalBytes);
@@ -1630,10 +1952,10 @@ function handleFotos(event) {
   const files = [...event.target.files];
   const limite = 10;
   const restam = limite - fotosTemp.length;
-  if (restam <= 0) { mostrarToast("⚠️ Limite de 10 fotos atingido.", "err"); return; }
+  if (restam <= 0) { mostrarToast("⚠️ Limite de 10 mídias atingido.", "err"); return; }
 
   const filesToProcess = files.slice(0, restam);
-  if (files.length > restam) mostrarToast(`⚠️ Apenas ${restam} foto(s) adicionada(s) (limite de ${limite}).`, "err");
+  if (files.length > restam) mostrarToast(`⚠️ Apenas ${restam} mídia(s) adicionada(s) (limite de ${limite}).`, "err");
 
   let processed = 0;
   filesToProcess.forEach(file => {
@@ -1653,17 +1975,25 @@ function renderizarFotosForm() {
   const grid = document.getElementById("fotos-grid");
   if (!grid) return;
 
-  const thumbs = fotosTemp.map((src, i) => `
-    <div class="foto-thumb">
-      <img src="${urlFoto(src)}" alt="Foto ${i+1}" />
-      ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
-      <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
-    </div>`).join('');
+  const thumbs = fotosTemp.map((src, i) => {
+    const srcUrl = urlFoto(src);
+    const video  = ehVideo(src);
+    const media  = video
+      ? `<video src="${srcUrl}" class="foto-thumb-video" muted playsinline preload="metadata"></video>
+         <div class="foto-thumb-play-icon">▶</div>`
+      : `<img src="${srcUrl}" alt="Foto ${i+1}" />`;
+    return `
+      <div class="foto-thumb">
+        ${media}
+        ${i === 0 ? '<span class="foto-thumb-badge">Principal</span>' : ''}
+        <button type="button" class="foto-thumb-remove" onclick="removerFotoForm(${i})" title="Remover">✕</button>
+      </div>`;
+  }).join('');
 
   const addBtn = fotosTemp.length < 10 ? `
-    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto">
+    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto ou vídeo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-      <span>Adicionar foto</span>
+      <span>Foto / Vídeo</span>
     </div>` : '';
 
   grid.innerHTML = thumbs + addBtn;
@@ -1757,7 +2087,7 @@ function gerarMensagemProp(prop) {
   linhas.push('');
   if (prop.preco) linhas.push(`💰 *${formatarPreco(prop.preco)}*`);
   linhas.push('');
-  linhas.push('📞 Entre em contato com *Tech Corretor* para mais informações!');
+  linhas.push('📞 Entre em contato com *LF Imóveis* para mais informações!');
 
   // Link de fotos — append apenas se a propriedade já tem ID no Firestore
   const propId = prop._firestoreId || prop.id;
@@ -1816,6 +2146,56 @@ function fecharModalDisparo() {
   document.getElementById("modalDisparo").style.display = "none";
   propIndexDisparo = -1;
   mensagemTipoAtivo = null;
+  disparoMidias = [];
+  renderizarPreviewMidias();
+}
+
+// ---- Upload de mídias (foto/vídeo) no disparo ----
+function adicionarMidiaDisparo(input) {
+  const files = Array.from(input.files || []);
+  files.forEach(file => {
+    if (disparoMidias.length >= 5) {
+      alert("Máximo de 5 arquivos por disparo.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      disparoMidias.push(e.target.result);
+      renderizarPreviewMidias();
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = ""; // permite selecionar o mesmo arquivo de novo
+}
+
+function removerMidiaDisparo(idx) {
+  disparoMidias.splice(idx, 1);
+  renderizarPreviewMidias();
+}
+
+function renderizarPreviewMidias() {
+  const lista = document.getElementById("disparo-midia-list");
+  if (!lista) return;
+  lista.innerHTML = "";
+  disparoMidias.forEach((dataUrl, idx) => {
+    const isVideo = dataUrl.startsWith("data:video");
+    const item = document.createElement("div");
+    item.className = "disparo-midia-item";
+    if (isVideo) {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-video">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    } else {
+      item.innerHTML = `
+        <img class="disparo-midia-thumb" src="${dataUrl}" alt="mídia ${idx + 1}">
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    }
+    lista.appendChild(item);
+  });
 }
 
 function selecionarTodosClientes(sel) {
@@ -1852,6 +2232,8 @@ function atualizarContadorDisparo() {
 }
 
 // ---- Montar colagem de fotos para envio via WhatsApp (canvas → base64 JPEG) ----
+// Carrega imagens via fetch→blob→objectURL para evitar CORS taint no canvas.
+// Grid: 1 foto→1×1  2→2×1  3-4→2×2  5-9→3×N
 async function montarColagem(fotos) {
   const urls = fotos
     .map(f => (typeof f === 'object' && f !== null) ? (f.url || '') : (typeof f === 'string' ? f : ''))
@@ -1869,7 +2251,7 @@ async function montarColagem(fotos) {
         if (!res.ok) return null;
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
-        blobUrls.push(blobUrl);
+        blobUrls.push(blobUrl); // registra para revogar depois
         src = blobUrl;
       }
       return await new Promise(resolve => {
@@ -1944,7 +2326,8 @@ async function montarColagem(fotos) {
     }
   } catch(e) {
     console.warn('[colagem] canvas falhou, enviando URLs diretas:', e.message);
-    resultado = urls.slice(0, MAX); // fallback: backend baixa as URLs diretamente
+    // Fallback: devolve as URLs originais para o backend baixar diretamente
+    resultado = urls.slice(0, MAX);
   } finally {
     blobUrls.forEach(u => URL.revokeObjectURL(u));
   }
@@ -1960,9 +2343,11 @@ async function dispararPropriedade() {
 
   const propIdx = propIndexDisparo;
   const msgTipo = mensagemTipoAtivo;
+  const fotos = [...disparoMidias]; // captura ANTES de fecharModalDisparo limpar o array
+
   fecharModalDisparo();
 
-  let titulo, fotos = [];
+  let titulo;
 
   if (propIdx >= 0) {
     const prop = propriedades[propIdx];
@@ -1986,6 +2371,16 @@ async function dispararPropriedade() {
   if (waStatus === "pronto" && socket) {
     await enviarViaBackend(titulo, selecionados, fnMensagem, fotos);
   } else {
+    // Mostra status atual para o usuário entender o que está acontecendo
+    const statusMsg = {
+      "desconectado": "WhatsApp desconectado. Clique em 'Conectar' na barra lateral.",
+      "conectando":   "WhatsApp ainda conectando, aguarde e tente novamente em alguns segundos.",
+      "qr":           "Escaneie o QR Code antes de enviar.",
+      "autenticado":  "WhatsApp autenticando, aguarde alguns segundos e tente novamente.",
+      "erro":         "Erro na conexão WhatsApp. Clique em 'Reconectar' na barra lateral.",
+    };
+    const msg = statusMsg[waStatus] || "WhatsApp não está pronto. Conecte-o primeiro.";
+
     const links = selecionados.map(c => {
       const tel = c.telefone.replace(/\D/g, "");
       const msg = fnMensagem(c);
@@ -1995,7 +2390,7 @@ async function dispararPropriedade() {
       };
     });
     abrirModal(titulo,
-      `${selecionados.length} cliente(s) selecionado(s).\n💡 Conecte o WhatsApp para envio automático, ou clique nos links abaixo:`,
+      `⚠️ ${msg}\n\nOu envie manualmente clicando nos links abaixo:`,
       links);
   }
 }
