@@ -67,6 +67,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Propriedades
       </a>
+      <a href="#" class="nav-item" id="nav-transmissoes" onclick="irPara('transmissoes'); return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Transmissões
+      </a>
 
       <div class="sidebar-divider"></div>
 
@@ -244,23 +248,41 @@
         </div>
       </section>
 
-    <!-- Painel de Transmissões -->
-    <section class="transmissoes-section">
-      <div class="table-card">
-        <div class="table-header">
-          <span class="table-title">Transmissões <span class="table-count" id="transmissoesCount">0</span></span>
-        </div>
-        <div id="transmissoes-lista" class="transmissoes-lista">
-          <div id="transmissoes-vazio" class="transmissoes-vazio">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <p>Nenhuma transmissão registrada ainda</p>
-            <span>Quando você disparar mensagens, o histórico aparece aqui.</span>
+    </div><!-- /page-dashboard -->
+
+    <!-- ===== PAGE: TRANSMISSÕES ===== -->
+    <div id="page-transmissoes" class="page" style="display:none;">
+
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div>
+            <h2 class="page-title">Transmissões</h2>
+            <span class="page-sub">Histórico de disparos e filas de envio</span>
           </div>
         </div>
-      </div>
-    </section>
+      </header>
 
-    </div><!-- /page-dashboard -->
+      <section class="transmissoes-section">
+        <div class="table-card">
+          <div class="table-header">
+            <span class="table-title">Histórico <span class="table-count" id="transmissoesCount">0</span></span>
+          </div>
+          <div id="transmissoes-lista" class="transmissoes-lista">
+            <div id="transmissoes-vazio" class="transmissoes-vazio">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <p>Nenhuma transmissão registrada ainda</p>
+              <span>Quando você disparar mensagens, o histórico aparece aqui.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /page-transmissoes -->
 
     <!-- ===== PAGE: PROPRIEDADES ===== -->
     <div id="page-propriedades" class="page" style="display:none;">

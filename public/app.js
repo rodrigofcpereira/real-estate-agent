@@ -1576,7 +1576,7 @@ function carregarTransmissoes() {
 //  NAVEGAÇÃO ENTRE PÁGINAS
 // ==============================================
 function irPara(pagina) {
-  ['dashboard', 'propriedades', 'configuracoes'].forEach(p => {
+  ['dashboard', 'propriedades', 'transmissoes', 'configuracoes'].forEach(p => {
     const el   = document.getElementById('page-' + p);
     const nav  = document.getElementById('nav-' + p);
     const bnav = document.getElementById('bnav-' + p);
@@ -1585,6 +1585,7 @@ function irPara(pagina) {
     if (bnav) bnav.classList.toggle('bnav-active', p === pagina);
   });
   if (pagina === 'propriedades') renderizarPropriedades();
+  if (pagina === 'transmissoes') carregarTransmissoes();
   if (pagina === 'configuracoes') carregarTelaConfiguracoes();
 }
 
