@@ -1093,6 +1093,7 @@ function aplicarSugestao(tipo) {
 // ---- Estado do job de disparo em andamento (para progresso via socket) ----
 let disparoJobAtual   = null; // jobId em andamento (ou null)
 let disparoClientesRef = [];  // lista de clientes na ordem enviada (para mapear índice → linha)
+let _ultimosProgressos = []; // buffer dos últimos eventos de progresso (para replay ao abrir modal)
 
 function formatarTempo(ms) {
   const s = Math.ceil(ms / 1000);
@@ -1149,7 +1150,7 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
         erros: 0,
         pendentes: clientes.length,
         mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
-        midias: fotosArray.length,
+        midias: fotosArray,
         destinatarios,
         usuarioUid: currentUser.uid,
         usuarioEmail: currentUser.email || null,
@@ -1158,7 +1159,9 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
       transmissaoId = docRef.id;
       console.log("📋 Transmissão criada:", transmissaoId);
 
-      const bytesEstimados = 500 + (clientes.length * 200);
+      // Bytes das fotos salvas como base64 no Firestore
+      const bytesFotos = fotosArray.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
+      const bytesEstimados = 500 + (clientes.length * 200) + bytesFotos;
       await atualizarStorageUsado(bytesEstimados);
     } else {
       console.warn("⚠️ Transmissão não criada: currentUser=", !!currentUser, "db=", !!db);
@@ -1208,7 +1211,7 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
 }
 
 // ── Retomar transmissão pendente/pausada ──
-async function retomarTransmissao(transmissaoId) {
+async function retomarTransmissao(transmissaoId, midiasExternas) {
   if (!currentUser || !db) return mostrarToast("Faça login primeiro", "err");
   if (waStatus !== "pronto") return mostrarToast("Conecte o WhatsApp primeiro", "err");
 
@@ -1239,8 +1242,33 @@ async function retomarTransmissao(transmissaoId) {
   }
 
   // Navega para transmissões e abre o modal de detalhes (progresso em tempo real)
-  irPara("transmissoes");
-  setTimeout(() => abrirDetalheTransmissao(transmissaoId), 300);
+  // Se o modal já está aberto para essa transmissão, atualiza a UI in-place sem fechar/reabrir
+  const modalJaAberto = _transDetalheId === transmissaoId &&
+    document.getElementById("modalTransmissao")?.style.display !== "none";
+
+  if (modalJaAberto) {
+    // Atualiza status badge para "Enviando..."
+    const statusEl = document.getElementById("trans-detalhe-status");
+    if (statusEl) { statusEl.className = "trans-status trans-status-progress"; statusEl.textContent = "📤 Enviando..."; }
+    // Mostra botão Parar, oculta Reenviar e Continuar
+    document.getElementById("trans-btn-parar").style.display = "inline-flex";
+    document.getElementById("trans-btn-reenviar").style.display = "none";
+    document.getElementById("trans-btn-continuar").style.display = "none";
+    // Mostra banner de progresso
+    const progressoEl = document.getElementById("trans-detalhe-progresso");
+    if (progressoEl) {
+      progressoEl.style.display = "block";
+      progressoEl.className = "trans-detalhe-progresso send-status-banner send-status-info";
+      progressoEl.innerHTML = '<span class="trans-dest-spinner"></span> Iniciando envio...';
+    }
+    // Atualiza lista de destinatários (todos marcados como pendente)
+    if (_transDetalheData?.destinatarios) {
+      _renderizarDestinatariosModal(_transDetalheData.destinatarios, true);
+    }
+  } else {
+    irPara("transmissoes");
+    setTimeout(() => abrirDetalheTransmissao(transmissaoId), 300);
+  }
 
   window._transmissaoAtual = transmissaoId;
   window._transmissaoIndicesPendentes = indicesPendentes;
@@ -1248,6 +1276,11 @@ async function retomarTransmissao(transmissaoId) {
 
   // Atualiza status para em_andamento
   try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "em_andamento" }); } catch(_) {}
+
+  // Mídias: usa as passadas como parâmetro ou as salvas no Firestore
+  const fotosParaEnviar = Array.isArray(midiasExternas) && midiasExternas.length > 0
+    ? midiasExternas
+    : (Array.isArray(trans.midias) ? trans.midias : []);
 
   // Monta payload só dos pendentes
   const payload = pendentes.map(r => ({ telefone: r.telefone, mensagem: trans.mensagemTemplate, nome: r.nome }));
@@ -1257,7 +1290,7 @@ async function retomarTransmissao(transmissaoId) {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: payload, fotos: [], transmissaoId })
+      body: JSON.stringify({ mensagens: payload, fotos: fotosParaEnviar, transmissaoId })
     });
     if (!res.ok) {
       let errMsg = `Erro ${res.status}`;
@@ -1356,6 +1389,11 @@ function handleDisparoProgresso(info) {
     removerBannerDisparo();
   }
 
+  // Salva no buffer para replay quando o modal de transmissão abrir depois
+  _ultimosProgressos.push(info);
+  // Mantém só os últimos 50 eventos para não crescer demais
+  if (_ultimosProgressos.length > 50) _ultimosProgressos.shift();
+
   // Atualiza também o banner do modal de detalhes (se estiver aberto para essa transmissão)
   _atualizarProgressoModalDetalhe(info);
 
@@ -1373,7 +1411,7 @@ function _atualizarProgressoModalDetalhe(info) {
   const modalAberto = document.getElementById("modalTransmissao")?.style.display === "flex";
   const mesmaTransmissao = info.transmissaoId && _transDetalheId === info.transmissaoId;
 
-  if (!modalAberto && !mesmaTransmissao) {
+  if (!modalAberto || !mesmaTransmissao) {
     el.style.display = "none";
     return;
   }
@@ -1416,7 +1454,7 @@ function _atualizarProgressoModalDetalhe(info) {
   // Re-renderiza a lista de destinatários para refletir os status atualizados
   if (_transDetalheData && _transDetalheData.destinatarios) {
     if (info.itemStatus) {
-      // Resultado final (enviado/erro)
+      // Resultado final (enviado/erro) — sempre aplica
       const realIdx = window._transmissaoIndicesPendentes
         ? window._transmissaoIndicesPendentes[info.idx]
         : info.idx;
@@ -1425,15 +1463,19 @@ function _atualizarProgressoModalDetalhe(info) {
         _transDetalheData.destinatarios[realIdx].erro = info.itemStatus === "erro" ? (info.itemErro || null) : null;
       }
     } else if (info.status === "verificando_numero" || info.status === "enviando") {
-      // Status intermediário (verificando/enviando)
+      // Status intermediário — só aplica se o destinatário ainda não tiver status final
       const realIdx = window._transmissaoIndicesPendentes
         ? window._transmissaoIndicesPendentes[info.idx]
         : info.idx;
       if (typeof realIdx === "number" && _transDetalheData.destinatarios[realIdx]) {
-        _transDetalheData.destinatarios[realIdx].status = info.status === "enviando" ? "enviando" : "verificando";
+        const statusAtual = _transDetalheData.destinatarios[realIdx].status;
+        // Não sobrescreve status finais com intermediários
+        if (statusAtual !== "enviado" && statusAtual !== "erro") {
+          _transDetalheData.destinatarios[realIdx].status = info.status === "enviando" ? "enviando" : "verificando";
+        }
       }
     } else if (info.status === "pausa_curta" || info.status === "aguardando_limite") {
-      // Durante a pausa, marca o PRÓXIMO item como "aguardando próximo" para dar sensação de progresso
+      // Durante a pausa, marca o PRÓXIMO item como "verificando" para dar sensação de progresso
       const nextIdx = info.idx !== undefined ? info.idx + 1 : info.processados;
       const realNextIdx = window._transmissaoIndicesPendentes
         ? window._transmissaoIndicesPendentes[nextIdx]
@@ -1449,10 +1491,17 @@ function _atualizarProgressoModalDetalhe(info) {
 function handleDisparoConcluido(info) {
   if (!info || info.jobId !== disparoJobAtual) return;
   disparoJobAtual = null;
+  _ultimosProgressos = []; // limpa buffer ao concluir
 
   // Esconde banner de progresso do modal de detalhes
   const progressoEl = document.getElementById("trans-detalhe-progresso");
   if (progressoEl) { progressoEl.style.display = "none"; }
+
+  // Restaura botões do modal de transmissão
+  const btnParar = document.getElementById("trans-btn-parar");
+  const btnReenviar = document.getElementById("trans-btn-reenviar");
+  if (btnParar) btnParar.style.display = "none";
+  if (btnReenviar) btnReenviar.style.display = "inline-flex";
 
   // Atualiza o modal de detalhes se estiver aberto
   if (_transDetalheData && info.transmissaoId && _transDetalheId === info.transmissaoId) {
@@ -1786,7 +1835,9 @@ async function _executarAutoDelete() {
       const criadaEm = data.criadaEm ? data.criadaEm.toDate() : null;
       if (criadaEm && criadaEm < seteDiasAtras && !data.fixada) {
         const total = data.totalDestinatarios || 0;
-        const bytes = 500 + (total * 200);
+        const midiasDel = Array.isArray(data.midias) ? data.midias : [];
+        const bytesFotosDel = midiasDel.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
+        const bytes = 500 + (total * 200) + bytesFotosDel;
         await doc.ref.delete();
         await atualizarStorageUsado(-bytes);
         deletados++;
@@ -1858,6 +1909,10 @@ async function abrirDetalheTransmissao(transmissaoId) {
   // Mensagem (editável)
   document.getElementById("trans-detalhe-mensagem").value = t.mensagemTemplate || "";
 
+  // Mídias salvas (carrega previews das fotos/vídeos da transmissão)
+  transMidias = Array.isArray(t.midias) ? [...t.midias] : [];
+  renderizarPreviewMidiasTransmissao();
+
   // Switch fixar (impede auto-limpeza de 7 dias)
   document.getElementById("trans-fixar-toggle").checked = !!t.fixada;
 
@@ -1884,14 +1939,9 @@ async function abrirDetalheTransmissao(transmissaoId) {
 
   document.getElementById("modalTransmissao").style.display = "flex";
 
-  // Se há um job ativo para essa transmissão, marca o próximo pendente com spinner
+  // Se há um job ativo para essa transmissão, mostra banner de progresso
+  // e replays os eventos buffered para refletir o estado atual
   if (disparoJobAtual && t.status === "em_andamento") {
-    const dests = t.destinatarios || [];
-    const primeiroPendente = dests.findIndex(d => d.status === "pendente");
-    if (primeiroPendente !== -1) {
-      dests[primeiroPendente].status = "verificando";
-      _renderizarDestinatariosModal(dests, true);
-    }
     // Mostra banner de progresso
     const progressoEl = document.getElementById("trans-detalhe-progresso");
     if (progressoEl) {
@@ -1899,6 +1949,9 @@ async function abrirDetalheTransmissao(transmissaoId) {
       progressoEl.className = "trans-detalhe-progresso send-status-banner send-status-info";
       progressoEl.innerHTML = '<span class="trans-dest-spinner"></span> Processando envio em andamento...';
     }
+    // Replay dos eventos buffered para corrigir o estado visual dos itens
+    const eventosReplay = _ultimosProgressos.filter(e => e.transmissaoId === transmissaoId);
+    eventosReplay.forEach(e => _atualizarProgressoModalDetalhe(e));
   }
 
   // Se está pausada com pendentes, mostra banner convidando a continuar
@@ -1916,7 +1969,60 @@ function fecharModalTransmissao() {
   document.getElementById("modalTransmissao").style.display = "none";
   _transDetalheId = null;
   _transDetalheData = null;
+  transMidias = [];
+  renderizarPreviewMidiasTransmissao();
 }
+
+// ---- Mídias do modal de transmissão ----
+let transMidias = []; // data URLs de imagens/vídeos para reenvio/continuação
+
+function adicionarMidiaTransmissao(input) {
+  const files = Array.from(input.files || []);
+  files.forEach(file => {
+    if (transMidias.length >= 5) {
+      alert("Máximo de 5 arquivos por transmissão.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      transMidias.push(e.target.result);
+      renderizarPreviewMidiasTransmissao();
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = ""; // permite selecionar o mesmo arquivo de novo
+}
+
+function removerMidiaTransmissao(idx) {
+  transMidias.splice(idx, 1);
+  renderizarPreviewMidiasTransmissao();
+}
+
+function renderizarPreviewMidiasTransmissao() {
+  const lista = document.getElementById("trans-midia-list");
+  if (!lista) return;
+  lista.innerHTML = "";
+  transMidias.forEach((dataUrl, idx) => {
+    const isVideo = dataUrl.startsWith("data:video");
+    const item = document.createElement("div");
+    item.className = "disparo-midia-item";
+    if (isVideo) {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-video">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
+      `;
+    } else {
+      item.innerHTML = `
+        <img class="disparo-midia-thumb" src="${dataUrl}" alt="mídia ${idx + 1}">
+        <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
+      `;
+    }
+    lista.appendChild(item);
+  });
+}
+
 
 // Renderiza a lista de destinatários dentro do modal
 function _renderizarDestinatariosModal(destinatarios, editavel) {
@@ -1980,9 +2086,11 @@ async function transDeletar() {
   if (!confirmado) return;
 
   try {
-    // Calcula bytes para subtrair do storage
+    // Calcula bytes para subtrair do storage (estrutura + fotos)
     const total = _transDetalheData?.totalDestinatarios || 0;
-    const bytesEstimados = 500 + (total * 200);
+    const midiasSalvas = Array.isArray(_transDetalheData?.midias) ? _transDetalheData.midias : [];
+    const bytesFotos = midiasSalvas.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
+    const bytesEstimados = 500 + (total * 200) + bytesFotos;
 
     await db.collection("transmissoes").doc(_transDetalheId).delete();
     await atualizarStorageUsado(-bytesEstimados);
@@ -2027,15 +2135,24 @@ async function transContinuar() {
 
   // Salva a mensagem atual do textarea antes de enviar
   const mensagemAtual = (document.getElementById("trans-detalhe-mensagem")?.value || "").trim();
-  if (mensagemAtual && db) {
+
+  // Captura mídias ANTES de fecharModalTransmissao limpar o array
+  const midiasParaEnviar = [...transMidias];
+
+  if (db) {
     try {
-      await db.collection("transmissoes").doc(idParaRetomar).update({ mensagemTemplate: mensagemAtual });
+      const update = {};
+      if (mensagemAtual) update.mensagemTemplate = mensagemAtual;
+      if (midiasParaEnviar.length > 0) update.midias = midiasParaEnviar;
+      if (Object.keys(update).length > 0) {
+        await db.collection("transmissoes").doc(idParaRetomar).update(update);
+      }
     } catch(_) {}
   }
 
-  fecharModalTransmissao();
-  await retomarTransmissao(idParaRetomar);
+  await retomarTransmissao(idParaRetomar, midiasParaEnviar);
 }
+
 
 // ── Adicionar destinatários da lista geral de clientes ──
 function transAbrirAdicionarClientes() {
@@ -2227,7 +2344,7 @@ async function transReenviarIndividual(idx) {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: [{ telefone: d.telefone, mensagem, nome: d.nome }], fotos: [], transmissaoId: idParaRetomar })
+      body: JSON.stringify({ mensagens: [{ telefone: d.telefone, mensagem, nome: d.nome }], fotos: transMidias.length > 0 ? [...transMidias] : (Array.isArray(_transDetalheData?.midias) ? _transDetalheData.midias : []), transmissaoId: idParaRetomar })
     });
     if (!res.ok) {
       let errMsg = `Erro ${res.status}`;
@@ -2359,6 +2476,9 @@ async function transReenviar() {
   );
   if (!confirmado) return;
 
+  // Captura mídias ANTES de fecharModalTransmissao limpar o array
+  const midiasParaEnviar = [...transMidias];
+
   try {
     // Reseta todos para pendente
     const novoDest = dest.map(d => ({
@@ -2371,6 +2491,7 @@ async function transReenviar() {
     await db.collection("transmissoes").doc(_transDetalheId).update({
       destinatarios: novoDest,
       mensagemTemplate: mensagem,
+      midias: midiasParaEnviar,
       status: "em_andamento",
       enviados: 0,
       erros: 0,
@@ -2379,20 +2500,21 @@ async function transReenviar() {
 
     _transDetalheData.destinatarios = novoDest;
     _transDetalheData.mensagemTemplate = mensagem;
+    _transDetalheData.midias = midiasParaEnviar;
     _transDetalheData.status = "em_andamento";
     _transDetalheData.enviados = 0;
     _transDetalheData.erros = 0;
     _transDetalheData.pendentes = novoDest.length;
 
     const idParaRetomar = _transDetalheId;
-    fecharModalTransmissao();
 
     // Usa a função retomarTransmissao que já sabe pegar os pendentes e enviar
-    await retomarTransmissao(idParaRetomar);
+    await retomarTransmissao(idParaRetomar, midiasParaEnviar);
   } catch (err) {
     mostrarToast("Erro ao reenviar: " + err.message, "err");
   }
 }
+
 
 // ==============================================
 //  NAVEGAÇÃO ENTRE PÁGINAS

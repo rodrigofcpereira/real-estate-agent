@@ -339,6 +339,14 @@
         <div class="trans-detalhe-secao">
           <label class="trans-detalhe-label">Mensagem</label>
           <textarea id="trans-detalhe-mensagem" class="trans-detalhe-textarea" rows="5"></textarea>
+          <div class="disparo-midias">
+            <label class="disparo-midia-add" for="trans-midia-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              Foto / Vídeo
+            </label>
+            <input type="file" id="trans-midia-input" accept="image/*,video/*" multiple style="display:none" onchange="adicionarMidiaTransmissao(this)">
+            <div class="disparo-midia-list" id="trans-midia-list"></div>
+          </div>
         </div>
 
         <!-- Lista de destinatários -->
