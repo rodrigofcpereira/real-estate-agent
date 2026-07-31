@@ -265,12 +265,35 @@
             <span class="page-sub">Histórico de disparos e filas de envio</span>
           </div>
         </div>
+        <div class="topbar-right">
+          <div class="antiban-switch-wrap" title="Quando ativado, transmissões concluídas são apagadas automaticamente após 7 dias">
+            <label class="antiban-switch">
+              <input type="checkbox" id="trans-autodelete-toggle" checked onchange="toggleAutoDeleteTransmissoes(this.checked)" />
+              <span class="antiban-switch-slider"></span>
+            </label>
+            <span class="antiban-switch-label">
+              <span class="antiban-switch-title">Auto-limpeza</span>
+              <span class="antiban-switch-state" id="trans-autodelete-state">7 dias</span>
+            </span>
+          </div>
+        </div>
       </header>
 
       <section class="transmissoes-section">
         <div class="table-card">
           <div class="table-header">
             <span class="table-title">Histórico <span class="table-count" id="transmissoesCount">0</span></span>
+          </div>
+          <div class="trans-toolbar">
+            <div class="search-box trans-search">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="trans-pesquisa" placeholder="Buscar por título, nome, telefone..." oninput="filtrarTransmissoes()" />
+            </div>
+            <div class="trans-paginacao-info">
+              <span id="trans-pagina-info">1–0 de 0</span>
+              <button class="btn btn-ghost btn-sm" id="trans-btn-anterior" onclick="transNavegar(-1)" disabled>←</button>
+              <button class="btn btn-ghost btn-sm" id="trans-btn-proximo" onclick="transNavegar(1)" disabled>→</button>
+            </div>
           </div>
           <div id="transmissoes-lista" class="transmissoes-lista">
             <div id="transmissoes-vazio" class="transmissoes-vazio">
@@ -283,6 +306,76 @@
       </section>
 
     </div><!-- /page-transmissoes -->
+
+    <!-- ===== MODAL DETALHES TRANSMISSÃO ===== -->
+    <div id="modalTransmissao" class="modal-overlay" style="display:none;">
+      <div class="modal-box modal-transmissao">
+        <div class="modal-header">
+          <div class="trans-titulo-wrap">
+            <span class="trans-titulo-display" id="trans-titulo-display" onclick="transIniciarEdicaoTitulo()"></span>
+            <button class="trans-titulo-edit-btn" onclick="transIniciarEdicaoTitulo()" title="Editar título">✏️</button>
+          </div>
+          <input type="text" id="trans-detalhe-titulo-input" class="trans-titulo-input" style="display:none;" onblur="transSalvarTitulo()" onkeydown="if(event.key==='Enter')this.blur()" />
+          <button class="modal-close" onclick="fecharModalTransmissao()">✕</button>
+        </div>
+
+        <!-- Status e info -->
+        <div class="trans-detalhe-info">
+          <span class="trans-status" id="trans-detalhe-status"></span>
+          <span class="trans-detalhe-data" id="trans-detalhe-data"></span>
+          <div class="trans-fixar-wrap">
+            <label class="antiban-switch">
+              <input type="checkbox" id="trans-fixar-toggle" onchange="transToggleFixar(this.checked)" />
+              <span class="antiban-switch-slider"></span>
+            </label>
+            <span class="trans-fixar-label">📌 Fixar (não apagar em 7 dias)</span>
+          </div>
+          <span class="trans-detalhe-resumo" id="trans-detalhe-resumo"></span>
+          <!-- Banner de progresso em tempo real (visível durante envio) -->
+          <div id="trans-detalhe-progresso" class="trans-detalhe-progresso" style="display:none;"></div>
+        </div>
+
+        <!-- Mensagem (editável) -->
+        <div class="trans-detalhe-secao">
+          <label class="trans-detalhe-label">Mensagem</label>
+          <textarea id="trans-detalhe-mensagem" class="trans-detalhe-textarea" rows="5"></textarea>
+        </div>
+
+        <!-- Lista de destinatários -->
+        <div class="trans-detalhe-secao">
+          <label class="trans-detalhe-label">
+            Destinatários
+            <button class="btn btn-ghost btn-sm" onclick="transAbrirAdicionarClientes()" style="margin-left:auto;">+ Adicionar da lista</button>
+          </label>
+          <div id="trans-detalhe-destinatarios" class="trans-dest-lista"></div>
+        </div>
+
+        <!-- Painel de adicionar clientes (hidden por padrão) -->
+        <div id="trans-adicionar-painel" class="trans-adicionar-painel" style="display:none;">
+          <div class="trans-adicionar-header">
+            <input type="text" id="trans-adicionar-busca" class="disparo-busca" placeholder="🔍 Buscar cliente por nome, apto ou telefone..." oninput="transFilterAdicionarClientes()" />
+            <div class="trans-adicionar-btns">
+              <button class="btn btn-ghost btn-sm" onclick="transSelAdicionarTodos(true)">Todos</button>
+              <button class="btn btn-ghost btn-sm" onclick="transSelAdicionarTodos(false)">Nenhum</button>
+            </div>
+          </div>
+          <div id="trans-adicionar-lista" class="trans-adicionar-lista"></div>
+          <div class="trans-adicionar-footer">
+            <button class="btn btn-primary btn-sm" onclick="transConfirmarAdicionar()">Adicionar selecionados</button>
+            <button class="btn btn-ghost btn-sm" onclick="transFecharAdicionarClientes()">Cancelar</button>
+          </div>
+        </div>
+
+        <!-- Ações -->
+        <div class="modal-footer trans-detalhe-footer">
+          <button class="btn btn-danger-outline" onclick="transDeletar()">🗑️ Excluir</button>
+          <button class="btn btn-ghost" id="trans-btn-parar" onclick="transParar()" style="display:none;">⏹️ Parar</button>
+          <button class="btn btn-primary" id="trans-btn-reenviar" onclick="transReenviar()">🔄 Reenviar para todos</button>
+          <button class="btn btn-primary" id="trans-btn-continuar" onclick="transContinuar()" style="display:none;">▶️ Continuar pendentes</button>
+          <button class="btn btn-ghost" onclick="fecharModalTransmissao()">Fechar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ===== PAGE: PROPRIEDADES ===== -->
     <div id="page-propriedades" class="page" style="display:none;">

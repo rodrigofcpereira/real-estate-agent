@@ -743,7 +743,7 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
 
     let resolvido = null;
     try {
-      emitProgresso({ status: "verificando_numero", clienteAtual: item.nome || item.telefone });
+      emitProgresso({ status: "verificando_numero", clienteAtual: item.nome || item.telefone, idx });
 
       // ── Delay antes de verificar número em lote grande ──
       // O WhatsApp Web throttla consultas getNumberId quando muitas chegam em
@@ -752,6 +752,10 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
       // tempo entre consultas para não estourar o timeout.
       if (idx > 0) {
         await antiBan.sleep(antiBan.isAtivo() ? 4000 : 1000);
+      } else {
+        // Primeiro item: micro-delay para dar tempo ao frontend de receber
+        // o jobId da resposta HTTP antes do primeiro evento de socket chegar
+        await antiBan.sleep(500);
       }
 
       resolvido = await resolverNumero(item.telefone || "");
@@ -772,7 +776,7 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
     }
 
     try {
-      emitProgresso({ status: "enviando", clienteAtual: item.nome || resolvido.numero });
+      emitProgresso({ status: "enviando", clienteAtual: item.nome || resolvido.numero, idx });
 
       // ── Anti-ban: simular digitação ──
       await antiBan.simularDigitacao(clienteWA, resolvido.chatId);
@@ -780,15 +784,32 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
       // ── Anti-ban: variar texto para evitar mensagens idênticas ──
       const mensagemFinal = antiBan.variarTexto(item.mensagem);
 
-      if (medias.length === 0) {
-        await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
-      } else if (medias.length === 1) {
-        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
-      } else {
-        await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
-        for (let i = 1; i < medias.length; i++) {
-          await antiBan.sleep(antiBan.delayHumanizado(1500, 3000)); // delay entre mídias
-          await clienteWA.sendMessage(resolvido.chatId, medias[i]);
+      // ── Envio com retry para erros de "Promise was collected" / frame instável ──
+      let envioOk = false;
+      for (let tentEnvio = 1; tentEnvio <= 3; tentEnvio++) {
+        try {
+          if (medias.length === 0) {
+            await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
+          } else if (medias.length === 1) {
+            await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
+          } else {
+            await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
+            for (let i = 1; i < medias.length; i++) {
+              await antiBan.sleep(antiBan.delayHumanizado(1500, 3000));
+              await clienteWA.sendMessage(resolvido.chatId, medias[i]);
+            }
+          }
+          envioOk = true;
+          break;
+        } catch (sendErr) {
+          const msg = sendErr?.message || "";
+          // "Promise was collected" ou "detached" = Chrome com memória baixa, retry pode resolver
+          if ((msg.includes("Promise was collected") || msg.includes("detached") || msg.includes("destroyed")) && tentEnvio < 3) {
+            logFile(`⚠️  Envio falhou (${msg.slice(0, 60)}), tentativa ${tentEnvio}/3 — aguardando 5s...`);
+            await antiBan.sleep(5000);
+            continue;
+          }
+          throw sendErr; // propaga se não é recuperável ou esgotou tentativas
         }
       }
 

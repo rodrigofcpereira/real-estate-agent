@@ -2809,7 +2809,7 @@ tbody tr:hover .row-actions { opacity: 1; }
 
 
 /* ===== Painel de Transmissões (dashboard) ===== */
-.transmissoes-section { margin-top: 24px; }
+.transmissoes-section { padding: 16px 28px 40px; }
 .transmissoes-lista { padding: 0; }
 .transmissoes-vazio {
   display: flex;
@@ -2871,4 +2871,322 @@ tbody tr:hover .row-actions { opacity: 1; }
 @media (max-width: 768px) {
   .trans-item { padding: 12px 14px; }
   .trans-item-titulo { font-size: .82rem; }
+}
+
+/* ===== Modal Detalhes Transmissão ===== */
+.modal-transmissao {
+  max-width: 600px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 0;
+}
+.modal-transmissao .modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.modal-transmissao .trans-detalhe-info {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.modal-transmissao .trans-detalhe-secao {
+  padding: 16px 24px;
+}
+.modal-transmissao .trans-detalhe-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+}
+.trans-detalhe-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.trans-detalhe-data {
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+.trans-detalhe-resumo {
+  font-size: .78rem;
+  color: var(--text-muted);
+  width: 100%;
+  margin-top: 4px;
+}
+.trans-detalhe-secao {
+  margin-bottom: 0;
+}
+.trans-detalhe-label {
+  display: flex;
+  align-items: center;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.trans-detalhe-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: .85rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  background: var(--white);
+  color: var(--text);
+  transition: border-color var(--transition);
+}
+.trans-detalhe-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.trans-detalhe-footer {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Lista de destinatários dentro do modal */
+.trans-dest-lista {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.trans-dest-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+}
+.trans-dest-item:last-child { border-bottom: none; }
+.trans-dest-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.trans-dest-nome { font-weight: 500; color: var(--text); }
+.trans-dest-nome small { font-weight: 400; opacity: .6; }
+.trans-dest-tel { font-size: .75rem; color: var(--text-muted); }
+.trans-dest-erro { font-size: .72rem; color: #b91c1c; }
+.trans-dest-status { font-size: .82rem; flex-shrink: 0; }
+.trans-dest-remove {
+  background: none;
+  border: none;
+  color: #b91c1c;
+  font-size: .9rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: .6;
+  transition: opacity .15s;
+}
+.trans-dest-remove:hover { opacity: 1; background: #fef2f2; }
+
+/* Hint clicável na lista de transmissões */
+.trans-item-hint {
+  font-size: .75rem;
+  color: var(--primary);
+  font-weight: 500;
+  margin-top: 4px;
+}
+.trans-item:hover {
+  background: var(--bg);
+}
+
+@media (max-width: 768px) {
+  .modal-transmissao { max-width: calc(100vw - 24px); }
+  .trans-dest-lista { max-height: 180px; }
+}
+
+/* ===== Toolbar Transmissões (busca + paginação) ===== */
+.trans-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.trans-search {
+  flex: 1;
+  min-width: 180px;
+}
+.trans-paginacao-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.trans-paginacao-info .btn { padding: 4px 10px; min-width: 0; }
+
+@media (max-width: 768px) {
+  .trans-toolbar { padding: 10px 14px; }
+  .trans-search { min-width: 100%; }
+  .transmissoes-section { padding: 10px 12px 16px; }
+}
+
+/* ===== Input título no modal de transmissão ===== */
+.trans-titulo-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.trans-titulo-display {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 0;
+  border-bottom: 1px dashed transparent;
+  transition: border-color var(--transition);
+}
+.trans-titulo-display:hover {
+  border-bottom-color: var(--text-light);
+}
+.trans-titulo-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: .85rem;
+  opacity: .5;
+  transition: opacity .15s;
+  padding: 2px 4px;
+}
+.trans-titulo-edit-btn:hover { opacity: 1; }
+.trans-titulo-input {
+  flex: 1;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  outline: none;
+}
+
+/* ===== Switch fixar transmissão ===== */
+.trans-fixar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+.trans-fixar-label {
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
+/* ===== Painel adicionar clientes à transmissão ===== */
+.trans-adicionar-painel {
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-top: 12px;
+  background: #f8faff;
+}
+.trans-adicionar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.trans-adicionar-btns {
+  display: flex;
+  gap: 6px;
+}
+.trans-adicionar-lista {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+.trans-adicionar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s;
+}
+.trans-adicionar-item:hover { background: #eef2ff; }
+.trans-adicionar-disabled { opacity: .5; cursor: default; }
+.trans-adicionar-disabled:hover { background: transparent; }
+.trans-adicionar-info { display: flex; flex-direction: column; flex: 1; }
+.trans-adicionar-nome { font-size: .84rem; font-weight: 500; color: var(--text); }
+.trans-adicionar-sub { font-size: .72rem; color: var(--text-muted); }
+.trans-adicionar-tag {
+  font-size: .68rem;
+  background: var(--border);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.trans-adicionar-footer {
+  display: flex;
+  gap: 8px;
+}
+
+/* ===== Botão retry individual no destinatário ===== */
+.trans-dest-retry {
+  background: none;
+  border: none;
+  font-size: .85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: .7;
+  transition: opacity .15s;
+}
+.trans-dest-retry:hover { opacity: 1; background: #eef2ff; }
+
+/* ===== Banner progresso no modal de detalhes da transmissão ===== */
+.trans-detalhe-progresso {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* ===== Spinner de loading no item ativo da transmissão ===== */
+.trans-dest-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: trans-spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes trans-spin {
+  to { transform: rotate(360deg); }
+}
+.trans-dest-item.trans-dest-active {
+  background: #eef2ff;
+  border-left: 3px solid var(--primary);
+}
+
+/* Destaque do item ativo no modal de envio do dashboard */
+.send-item.trans-dest-active {
+  background: #eef2ff;
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
 }
