@@ -677,6 +677,11 @@ async function registrarDiagnostico(evento) {
   try {
     if (!currentUser || !db) return; // sem sessão logada, não há como identificar o corretor
 
+    // Kill-switch: se telemetriaAtiva === false no doc do usuário, não grava nada.
+    // Para desligar: no Firebase Console → users/{uid} → campo "telemetriaAtiva": false
+    // Para religar: apague o campo ou coloque true.
+    if (userData && userData.telemetriaAtiva === false) return;
+
     await db.collection("diagnosticos").add({
       tipo: evento.tipo,
       dados: evento.dados || {},
