@@ -438,8 +438,8 @@ io.on("connection", (socket) => {
 const _cacheNumeros = new Map(); // "5511..." → { chatId, numero } — só guarda sucessos
 
 // Timeout para getNumberId: VPS lenta precisa de mais tempo
-// Windows local: 20s (era 12s — muito curto quando o WA está sob carga de lote grande)
-const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 60000 : 20000;
+// Windows local: 45s (máquinas com pouca RAM ou antivírus podem travar o Chrome)
+const NUMERO_TIMEOUT_MS = process.platform === "linux" ? 60000 : 45000;
 
 async function resolverNumero(telefone) {
   // Remove tudo que não é dígito
@@ -466,7 +466,7 @@ async function resolverNumero(telefone) {
   const msDesdePronto = _prontoDesde ? Date.now() - _prontoDesde : Infinity;
   const emWarmup = msDesdePronto < 45000; // primeiros 45s após "pronto"
   const maxTentativas = emWarmup ? 4 : 3;
-  const esperaEntreTentativas = emWarmup ? 8000 : 5000;
+  const esperaEntreTentativas = emWarmup ? 8000 : 10000;
 
   // Tenta número normal e também sem o 9 extra (regiões antigas)
   const candidatos = [numero];
@@ -698,10 +698,10 @@ async function processarLoteBackground(jobId, mensagens, medias) {
       // ── Delay antes de verificar número em lote grande ──
       // O WhatsApp Web throttla consultas getNumberId quando muitas chegam em
       // sequência rápida (retorna null para todos → "número não encontrado").
-      // Um delay curto antes de cada verificação resolve o problema sem afetar
-      // significativamente o tempo total do lote.
+      // Em máquinas lentas (Windows com pouca RAM), o Chrome precisa de mais
+      // tempo entre consultas para não estourar o timeout.
       if (idx > 0) {
-        await antiBan.sleep(antiBan.isAtivo() ? 2000 : 500);
+        await antiBan.sleep(antiBan.isAtivo() ? 4000 : 1000);
       }
 
       resolvido = await resolverNumero(item.telefone || "");
