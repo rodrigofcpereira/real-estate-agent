@@ -1,6 +1,6 @@
 {
   "name": "tech-corretor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Tech Corretor - Gerenciamento de clientes e WhatsApp",
   "main": "src/main.js",
   "scripts": {

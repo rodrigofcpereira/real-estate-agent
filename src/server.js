@@ -9,6 +9,7 @@ const { Server } = require("socket.io");
 const cors       = require("cors");
 const path       = require("path");
 const fs         = require("fs");
+const { execSync } = require("child_process");
 const qrcode     = require("qrcode");
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const antiBan = require("./anti-ban");
@@ -182,8 +183,83 @@ function limparLockChrome() {
   removerLocks(sessionBase);
 }
 
+// ---- Watchdog de memória: monitora o Chrome e reconecta ANTES de travar ----
+// Em vez de só reagir a crashes (frame detached, timeout), este watchdog
+// verifica periodicamente quanta RAM o processo do Chrome está usando. Se
+// passar de um limite seguro, dispara uma reconexão preventiva — trocando
+// "reagir ao crash" por "evitar o crash antes que ele aconteça".
+let _watchdogInterval = null;
+const MEMORIA_LIMITE_MB = 350; // acima disso, reconecta preventivamente
+
+function obterMemoriaChromeMB(pid) {
+  try {
+    if (process.platform === "win32") {
+      // wmic retorna WorkingSetSize em bytes
+      const saida = execSync(`wmic process where ProcessId=${pid} get WorkingSetSize /value`, { timeout: 5000 }).toString();
+      const match = saida.match(/WorkingSetSize=(\d+)/);
+      if (match) return Math.round(parseInt(match[1]) / 1024 / 1024);
+    } else {
+      // macOS/Linux: ps retorna RSS em KB
+      const saida = execSync(`ps -o rss= -p ${pid}`, { timeout: 5000 }).toString().trim();
+      if (saida) return Math.round(parseInt(saida) / 1024);
+    }
+  } catch (_) {
+    // Processo pode já não existir — ignora silenciosamente
+  }
+  return null;
+}
+
+function pararWatchdogMemoria() {
+  if (_watchdogInterval) {
+    clearInterval(_watchdogInterval);
+    _watchdogInterval = null;
+  }
+}
+
+function iniciarWatchdogMemoria() {
+  pararWatchdogMemoria(); // evita duplicar se já houver um rodando
+
+  _watchdogInterval = setInterval(async () => {
+    if (!clienteWA || whatsappStatus !== "pronto") return;
+
+    try {
+      const browser = clienteWA.pupBrowser;
+      if (!browser) return;
+      const proc = browser.process();
+      if (!proc || !proc.pid) return;
+
+      const memMB = obterMemoriaChromeMB(proc.pid);
+      if (memMB === null) return;
+
+      if (memMB > MEMORIA_LIMITE_MB) {
+        logFile(`⚠️  Chrome usando ${memMB}MB de RAM (limite: ${MEMORIA_LIMITE_MB}MB) — reconectando preventivamente para evitar crash...`);
+        emitirDiagnostico("reconexao_preventiva_memoria", { memoriaMB: memMB, limiteMB: MEMORIA_LIMITE_MB });
+        pararWatchdogMemoria();
+
+        // Só reconecta se não houver um lote em andamento — evita interromper
+        // um envio ativo. Se houver, tenta de novo na próxima checagem.
+        const temLoteAtivo = Array.from(_batchJobs.values()).some(j => !j.cancelado);
+        if (temLoteAtivo) {
+          logFile(`ℹ️  Reconexão preventiva postergada — lote de envio em andamento.`);
+          iniciarWatchdogMemoria(); // reagenda para checar de novo em breve
+          return;
+        }
+
+        whatsappStatus = "conectando";
+        io.emit("wa:status", { status: "conectando", message: "Otimizando conexão (uso de memória alto)..." });
+        await destruirCliente();
+        iniciando = false;
+        setTimeout(() => iniciarWhatsApp(), 2000);
+      }
+    } catch (err) {
+      logFile(`⚠️  Erro no watchdog de memória: ${err.message}`);
+    }
+  }, 60000); // checa a cada 60s — frequente o bastante sem sobrecarregar
+}
+
 // ---- Destruir cliente atual e aguardar o browser fechar ----
 async function destruirCliente() {
+  pararWatchdogMemoria();
   if (!clienteWA) return;
   const alvo = clienteWA;
   clienteWA  = null;
@@ -242,6 +318,19 @@ async function iniciarWhatsApp() {
         "--renderer-process-limit=1",                // só 1 renderer → economiza ~100MB RAM
         "--disk-cache-size=52428800",                // cache de disco máx 50MB (padrão ~320MB)
         "--js-flags=--max-old-space-size=192",       // heap V8 máx 192MB (1GB VPS tem 193MB livres)
+        // ── Redução adicional de memória (para máquinas Windows com pouca RAM) ──
+        "--disable-features=Translate,MediaRouter,OptimizationHints",
+        "--disable-component-extensions-with-background-pages",
+        "--disable-breakpad",                        // desativa relatório de crash interno do Chrome (economiza memória)
+        "--disable-crash-reporter",
+        "--disable-domain-reliability",
+        "--disable-print-preview",
+        "--disable-speech-api",
+        "--metrics-recording-only",
+        "--mute-audio",
+        "--no-pings",
+        "--password-store=basic",
+        "--use-mock-keychain",
         // Fallback extra: caso algum flag conflitante force uma janela visível,
         // posiciona-a fora da área da tela para o usuário nunca vê-la.
         "--window-position=-32000,-32000",
@@ -341,6 +430,7 @@ async function iniciarWhatsApp() {
       whatsappStatus = "pronto";
       _prontoDesde = Date.now(); // marca o instante para o warm-up de resolverNumero
       io.emit("wa:status", { status: "pronto" });
+      iniciarWatchdogMemoria(); // monitora RAM do Chrome e reconecta preventivamente se necessário
     });
 
     clienteWA.on("auth_failure", async (msg) => {
@@ -502,7 +592,7 @@ async function resolverNumero(telefone) {
   const msDesdePronto = _prontoDesde ? Date.now() - _prontoDesde : Infinity;
   const emWarmup = msDesdePronto < 45000; // primeiros 45s após "pronto"
   const maxTentativas = emWarmup ? 4 : 3;
-  const esperaEntreTentativas = emWarmup ? 8000 : 10000;
+  const esperaEntreTentativas = emWarmup ? 5000 : 5000;
 
   // Tenta número normal e também sem o 9 extra (regiões antigas)
   const candidatos = [numero];
@@ -596,7 +686,17 @@ async function processarMedia(fotoInput, nomeArquivo = null) {
   if (fotoInput.startsWith('http')) {
     try {
       const media = await MessageMedia.fromUrl(fotoInput, { unsafeMime: true });
-      if (media && nomeArquivo) media.filename = nomeArquivo;
+      // Só sobrescreve o nome se o mimetype detectado NÃO corresponder à
+      // extensão do nome sugerido (evita forçar "imovel.jpg" em um PDF/xlsx
+      // que veio com mimetype correto detectado pelo MessageMedia.fromUrl).
+      if (media && nomeArquivo) {
+        const extSugerida = nomeArquivo.split('.').pop()?.toLowerCase();
+        const extReal = media.mimetype?.split('/')[1]?.replace('jpeg', 'jpg');
+        if (!extReal || extSugerida === extReal) {
+          media.filename = nomeArquivo;
+        }
+        // Senão, mantém o filename/mimetype que o fromUrl já detectou corretamente
+      }
       return media;
     } catch(e) {
       logFile(`⚠️ Falha ao baixar mídia via URL (${nomeArquivo || fotoInput}): ${e.message}`);
@@ -614,6 +714,17 @@ async function processarMedia(fotoInput, nomeArquivo = null) {
     nomeArquivo = `midia_${Date.now()}.${ext}`;
   }
   return new MessageMedia(mimetype, match[2], nomeArquivo);
+}
+
+// ---- Utilitário: opções de envio para mídia (PDF precisa de sendAsDocument) ----
+function opcoesEnvioMedia(media, caption) {
+  const opts = {};
+  if (caption) opts.caption = caption;
+  // PDFs e outros documentos não-imagem/vídeo devem ser enviados como documento
+  if (media.mimetype && (media.mimetype.includes("pdf") || media.mimetype.includes("msword") || media.mimetype.includes("spreadsheet") || media.mimetype.includes("document"))) {
+    opts.sendMediaAsDocument = true;
+  }
+  return opts;
 }
 
 // ---- API: Enviar mensagem ----
@@ -654,12 +765,12 @@ app.post("/api/send", async (req, res) => {
     if (medias.length === 0) {
       await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
     } else if (medias.length === 1) {
-      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal || "" });
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], opcoesEnvioMedia(medias[0], mensagemFinal || ""));
     } else {
-      await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal || "" });
+      await clienteWA.sendMessage(resolvido.chatId, medias[0], opcoesEnvioMedia(medias[0], mensagemFinal || ""));
       for (let i = 1; i < medias.length; i++) {
         await antiBan.sleep(antiBan.delayHumanizado(1500, 3000)); // delay entre mídias
-        await clienteWA.sendMessage(resolvido.chatId, medias[i]);
+        await clienteWA.sendMessage(resolvido.chatId, medias[i], opcoesEnvioMedia(medias[i], ""));
       }
     }
 
@@ -751,7 +862,7 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
       // Em máquinas lentas (Windows com pouca RAM), o Chrome precisa de mais
       // tempo entre consultas para não estourar o timeout.
       if (idx > 0) {
-        await antiBan.sleep(antiBan.isAtivo() ? 4000 : 1000);
+        await antiBan.sleep(antiBan.isAtivo() ? 2000 : 500);
       } else {
         // Primeiro item: micro-delay para dar tempo ao frontend de receber
         // o jobId da resposta HTTP antes do primeiro evento de socket chegar
@@ -787,16 +898,25 @@ async function processarLoteBackground(jobId, mensagens, medias, transmissaoId) 
       // ── Envio com retry para erros de "Promise was collected" / frame instável ──
       let envioOk = false;
       for (let tentEnvio = 1; tentEnvio <= 3; tentEnvio++) {
+        // Guard: se o cliente WA foi destruído (reconexão em andamento por
+        // frame detached/logout), não adianta tentar enviar — espera a
+        // reconexão terminar antes de tentar de novo.
+        if (!clienteWA || whatsappStatus !== "pronto") {
+          logFile(`⚠️  WhatsApp não está pronto (status: ${whatsappStatus}) — aguardando reconexão antes de enviar...`);
+          await antiBan.sleep(5000);
+          if (tentEnvio < 3) continue;
+          throw new Error("WhatsApp desconectado durante o envio (sessão caiu)");
+        }
         try {
           if (medias.length === 0) {
             await clienteWA.sendMessage(resolvido.chatId, mensagemFinal);
           } else if (medias.length === 1) {
-            await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
+            await clienteWA.sendMessage(resolvido.chatId, medias[0], opcoesEnvioMedia(medias[0], mensagemFinal));
           } else {
-            await clienteWA.sendMessage(resolvido.chatId, medias[0], { caption: mensagemFinal });
+            await clienteWA.sendMessage(resolvido.chatId, medias[0], opcoesEnvioMedia(medias[0], mensagemFinal));
             for (let i = 1; i < medias.length; i++) {
               await antiBan.sleep(antiBan.delayHumanizado(1500, 3000));
-              await clienteWA.sendMessage(resolvido.chatId, medias[i]);
+              await clienteWA.sendMessage(resolvido.chatId, medias[i], opcoesEnvioMedia(medias[i], ""));
             }
           }
           envioOk = true;
@@ -869,8 +989,11 @@ app.post("/api/send-batch", async (req, res) => {
 
   // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
+  // nomeArquivo = null → deixa o mimetype real (detectado do data URL ou da
+  // URL do Storage) decidir a extensão correta, em vez de forçar ".jpg"
+  // em qualquer tipo de arquivo (PDF, XLSX, DOCX, etc.)
   const mediasRaw = await Promise.all(
-    fotosArray.map((f, i) => processarMedia(f, `imovel_${i + 1}.jpg`))
+    fotosArray.map((f) => processarMedia(f, null))
   );
   const medias = mediasRaw.filter(Boolean);
 

@@ -27,21 +27,21 @@ const CONFIG = {
   limitePorHora: 150,         // máx mensagens por hora (janela deslizante)
 
   // Delays entre mensagens (em ms) — isso é o que de fato "humaniza" o envio
-  delayMin: 4000,             // mínimo 4s entre msgs
-  delayMax: 12000,            // máximo 12s entre msgs
-  delayEntreGrupos: 30000,    // pausa maior a cada N mensagens (30s)
-  mensagensAntesDeGrupo: 8,   // a cada 8 msgs, faz pausa longa
+  delayMin: 2000,             // mínimo 2s entre msgs
+  delayMax: 5500,             // máximo 5.5s entre msgs
+  delayEntreGrupos: 15000,    // pausa maior a cada N mensagens (15s)
+  mensagensAntesDeGrupo: 10,  // a cada 10 msgs, faz pausa longa
 
   // Pausa longa obrigatória
-  pausaLongaMin: 45000,       // 45s mínimo na pausa longa
-  pausaLongaMax: 90000,       // 90s máximo na pausa longa
+  pausaLongaMin: 20000,       // 20s mínimo na pausa longa
+  pausaLongaMax: 40000,       // 40s máximo na pausa longa
 
   // Horário permitido para envio (evita madrugada)
   horarioInicio: 8,           // 08:00
   horarioFim: 21,             // 21:00
 
   // Simulação de digitação
-  typingDuration: { min: 1500, max: 4000 }, // tempo que fica "digitando"
+  typingDuration: { min: 800, max: 2000 }, // tempo que fica "digitando"
 
   // Variação de texto
   variacaoTexto: true,        // adiciona variações sutis ao texto

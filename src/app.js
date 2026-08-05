@@ -1139,8 +1139,30 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
   }));
 
   let transmissaoId = null;
+  let midiasUrls = []; // URLs das mídias no Storage (para persistir e reenviar)
+
   try {
     if (currentUser && db) {
+      // Upload das mídias para o Firebase Storage (se houver)
+      if (fotosArray.length > 0) {
+        mostrarToast("Enviando mídias para o servidor...", "info");
+        for (const foto of fotosArray) {
+          try {
+            const mimeMatch = foto.match(/^data:([^;]+);/);
+            const mimetype = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+            const ext = mimetype.split("/")[1]?.replace("jpeg", "jpg").replace("quicktime", "mov") || "bin";
+            const prefix = mimetype.includes("pdf") ? "pdf" : mimetype.startsWith("video/") ? "video" : "foto";
+            const fileName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            const ref = storage.ref(`transmissoes/${currentUser.uid}/${fileName}`);
+            const snapshot = await ref.putString(foto, "data_url");
+            const url = await snapshot.ref.getDownloadURL();
+            midiasUrls.push({ url, type: mimetype, name: fileName });
+          } catch (uploadErr) {
+            console.error("Erro ao fazer upload de mídia:", uploadErr.message);
+          }
+        }
+      }
+
       const docRef = await db.collection("transmissoes").add({
         titulo,
         status: "em_andamento",
@@ -1150,7 +1172,7 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
         erros: 0,
         pendentes: clientes.length,
         mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
-        midias: fotosArray,
+        midias: midiasUrls, // salva URLs (não o base64)
         destinatarios,
         usuarioUid: currentUser.uid,
         usuarioEmail: currentUser.email || null,
@@ -1159,9 +1181,7 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
       transmissaoId = docRef.id;
       console.log("📋 Transmissão criada:", transmissaoId);
 
-      // Bytes das fotos salvas como base64 no Firestore
-      const bytesFotos = fotosArray.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
-      const bytesEstimados = 500 + (clientes.length * 200) + bytesFotos;
+      const bytesEstimados = 500 + (clientes.length * 200);
       await atualizarStorageUsado(bytesEstimados);
     } else {
       console.warn("⚠️ Transmissão não criada: currentUser=", !!currentUser, "db=", !!db);
@@ -1189,7 +1209,7 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: payload, fotos: fotosArray, transmissaoId })
+      body: JSON.stringify({ mensagens: payload, fotos: midiasUrls.length > 0 ? midiasUrls.map(m => m.url) : fotosArray, transmissaoId })
     });
 
     if (!res.ok) {
@@ -1277,10 +1297,14 @@ async function retomarTransmissao(transmissaoId, midiasExternas) {
   // Atualiza status para em_andamento
   try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "em_andamento" }); } catch(_) {}
 
-  // Mídias: usa as passadas como parâmetro ou as salvas no Firestore
-  const fotosParaEnviar = Array.isArray(midiasExternas) && midiasExternas.length > 0
-    ? midiasExternas
-    : (Array.isArray(trans.midias) ? trans.midias : []);
+  // Mídias: usa as passadas como parâmetro ou as salvas no Firestore (extrai URLs)
+  let fotosParaEnviar = [];
+  if (Array.isArray(midiasExternas) && midiasExternas.length > 0) {
+    fotosParaEnviar = midiasExternas;
+  } else if (Array.isArray(trans.midias) && trans.midias.length > 0) {
+    // midias pode ser array de objetos {url, type, name} ou array de strings
+    fotosParaEnviar = trans.midias.map(m => typeof m === "object" ? m.url : m).filter(Boolean);
+  }
 
   // Monta payload só dos pendentes
   const payload = pendentes.map(r => ({ telefone: r.telefone, mensagem: trans.mensagemTemplate, nome: r.nome }));
@@ -2002,20 +2026,48 @@ function renderizarPreviewMidiasTransmissao() {
   const lista = document.getElementById("trans-midia-list");
   if (!lista) return;
   lista.innerHTML = "";
-  transMidias.forEach((dataUrl, idx) => {
-    const isVideo = dataUrl.startsWith("data:video");
+  transMidias.forEach((midia, idx) => {
+    // Suporta tanto objetos {url, type, name} quanto strings (data URL ou URL)
+    const url = typeof midia === "object" ? midia.url : midia;
+    const type = typeof midia === "object" ? (midia.type || "") : "";
+    // Nome real do arquivo: usa o salvo (midia.name) ou extrai da URL/data URL
+    const nomeArquivo = typeof midia === "object" && midia.name
+      ? midia.name
+      : (url.split("/").pop() || "").split("?")[0].split("#")[0] || "arquivo";
+
+    const isPdf = type.includes("pdf") || url.includes(".pdf");
+    const isVideo = type.startsWith("video/") || url.includes(".mp4") || url.includes(".mov");
+    const isImage = type.startsWith("image/") || url.match(/\.(jpg|jpeg|png|gif|webp)/i);
+
     const item = document.createElement("div");
     item.className = "disparo-midia-item";
-    if (isVideo) {
+    if (isPdf) {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-pdf">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/><text x="7" y="17" font-size="5" fill="#fff" font-weight="bold">PDF</text></svg>
+        </div>
+        <span class="disparo-midia-nome" title="${nomeArquivo}">${nomeArquivo}</span>
+        <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
+      `;
+    } else if (isVideo) {
       item.innerHTML = `
         <div class="disparo-midia-thumb disparo-midia-video">
           <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
+        <span class="disparo-midia-nome" title="${nomeArquivo}">${nomeArquivo}</span>
+        <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
+      `;
+    } else if (isImage) {
+      item.innerHTML = `
+        <img class="disparo-midia-thumb" src="${url}" alt="mídia ${idx + 1}">
         <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
       `;
     } else {
       item.innerHTML = `
-        <img class="disparo-midia-thumb" src="${dataUrl}" alt="mídia ${idx + 1}">
+        <div class="disparo-midia-thumb disparo-midia-doc">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/></svg>
+        </div>
+        <span class="disparo-midia-nome" title="${nomeArquivo}">${nomeArquivo}</span>
         <button class="disparo-midia-remove" onclick="removerMidiaTransmissao(${idx})" title="Remover">✕</button>
       `;
     }
@@ -2819,6 +2871,32 @@ function ehVideo(src) {
   return false;
 }
 
+function ehPdf(src) {
+  if (typeof src === 'object' && src !== null) {
+    if (src.type && src.type.includes('pdf')) return true;
+    const u = src.url || '';
+    return u.startsWith('data:application/pdf') || /\.pdf(\?|$)/i.test(u);
+  }
+  if (typeof src === 'string') {
+    if (src.startsWith('data:application/pdf')) return true;
+    return /\.pdf(\?|$)/i.test(src);
+  }
+  return false;
+}
+
+function ehImagem(src) {
+  if (typeof src === 'object' && src !== null) {
+    if (src.type && src.type.startsWith('image/')) return true;
+    const u = src.url || '';
+    return u.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(u);
+  }
+  if (typeof src === 'string') {
+    if (src.startsWith('data:image')) return true;
+    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(src);
+  }
+  return false;
+}
+
 // ---- Storage Helpers ----
 function calcularTamanhoBase64(dataUrl) {
   const base64 = dataUrl.split(",")[1] || dataUrl;
@@ -2926,10 +3004,23 @@ function renderizarFotosForm() {
   const thumbs = fotosTemp.map((src, i) => {
     const srcUrl = urlFoto(src);
     const video  = ehVideo(src);
-    const media  = video
-      ? `<video src="${srcUrl}" class="foto-thumb-video" muted playsinline preload="metadata"></video>
-         <div class="foto-thumb-play-icon">▶</div>`
-      : `<img src="${srcUrl}" alt="Foto ${i+1}" />`;
+    const isPdf  = ehPdf(src);
+    const isDoc  = !video && !isPdf && !ehImagem(src);
+    let media;
+    if (isPdf) {
+      media = `<div class="foto-thumb-doc foto-thumb-pdf">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/><text x="7" y="17" font-size="5" fill="#fff" font-weight="bold">PDF</text></svg>
+      </div>`;
+    } else if (isDoc) {
+      media = `<div class="foto-thumb-doc">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/></svg>
+      </div>`;
+    } else if (video) {
+      media = `<video src="${srcUrl}" class="foto-thumb-video" muted playsinline preload="metadata"></video>
+         <div class="foto-thumb-play-icon">▶</div>`;
+    } else {
+      media = `<img src="${srcUrl}" alt="Foto ${i+1}" />`;
+    }
     return `
       <div class="foto-thumb">
         ${media}
@@ -2939,9 +3030,9 @@ function renderizarFotosForm() {
   }).join('');
 
   const addBtn = fotosTemp.length < 10 ? `
-    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar foto ou vídeo">
+    <div class="foto-add-btn" onclick="document.getElementById('p-fotos').click()" title="Adicionar arquivo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-      <span>Foto / Vídeo</span>
+      <span>Anexar</span>
     </div>` : '';
 
   grid.innerHTML = thumbs + addBtn;
@@ -3161,18 +3252,34 @@ function renderizarPreviewMidias() {
   lista.innerHTML = "";
   disparoMidias.forEach((dataUrl, idx) => {
     const isVideo = dataUrl.startsWith("data:video");
+    const isPdf = dataUrl.startsWith("data:application/pdf");
+    const isImage = dataUrl.startsWith("data:image");
     const item = document.createElement("div");
     item.className = "disparo-midia-item";
-    if (isVideo) {
+    if (isPdf) {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-pdf">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/><text x="7" y="17" font-size="5" fill="#fff" font-weight="bold">PDF</text></svg>
+        </div>
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    } else if (isVideo) {
       item.innerHTML = `
         <div class="disparo-midia-thumb disparo-midia-video">
           <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
         <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
       `;
-    } else {
+    } else if (isImage) {
       item.innerHTML = `
         <img class="disparo-midia-thumb" src="${dataUrl}" alt="mídia ${idx + 1}">
+        <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
+      `;
+    } else {
+      item.innerHTML = `
+        <div class="disparo-midia-thumb disparo-midia-doc">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/></svg>
+        </div>
         <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
       `;
     }

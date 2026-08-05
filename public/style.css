@@ -2120,6 +2120,34 @@ tbody tr:hover .row-actions { opacity: 1; }
 .disparo-midia-item {
   position: relative;
 }
+/* Itens com nome de arquivo (PDF, vídeo, documento) ficam mais largos para acomodar o texto */
+.disparo-midia-item:has(.disparo-midia-nome) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px 4px 4px;
+  max-width: 180px;
+}
+.disparo-midia-item:has(.disparo-midia-nome) .disparo-midia-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.disparo-midia-nome {
+  font-size: .72rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+.disparo-midia-item:has(.disparo-midia-nome) .disparo-midia-remove {
+  position: static;
+  margin-left: auto;
+}
 .disparo-midia-thumb {
   width: 48px; height: 48px;
   object-fit: cover;
@@ -3189,4 +3217,50 @@ tbody tr:hover .row-actions { opacity: 1; }
   background: #eef2ff;
   border-left: 3px solid var(--primary);
   border-radius: var(--radius-sm);
+}
+
+/* ===== Ícone PDF no preview de mídias ===== */
+.disparo-midia-pdf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #dc2626;
+  border-radius: var(--radius-sm);
+}
+
+/* ===== Ícone genérico de documento no preview de mídias ===== */
+.disparo-midia-doc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #6b7280;
+  border-radius: var(--radius-sm);
+}
+
+/* ===== Ícone de documento no grid de fotos de propriedades ===== */
+.foto-thumb-doc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #6b7280;
+  border-radius: var(--radius-sm);
+  color: #fff;
+}
+.foto-thumb-doc.foto-thumb-pdf {
+  background: #dc2626;
+}
+
+/* ===== Label de versão no sidebar ===== */
+.logo-text-wrap {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.app-version-label {
+  font-size: .72rem;
+  font-weight: 500;
+  color: #fff;
+  opacity: .5;
 }
