@@ -384,9 +384,12 @@ async function iniciarWhatsApp() {
       whatsappStatus = "autenticado";
       io.emit("wa:status", { status: "autenticado", message: "Sessão autenticada, carregando WhatsApp..." });
 
-      // VPS lento precisa de mais tempo — usa 300s em produção, 60s local
+      // VPS lento precisa de mais tempo — usa 300s em produção, 180s local.
+      // 60s era insuficiente: após o QR, o WA precisa sincronizar mensagens/
+      // contatos antes de disparar "ready", o que pode levar vários minutos.
+      // Com 60s o timeout apagava a sessão antes de "ready" chegar → loop de QR.
       const isCloud = !process.env.ELECTRON_RUN_AS_NODE && process.platform === "linux";
-      const readyTimeoutMs = isCloud ? 300000 : 60000;
+      const readyTimeoutMs = isCloud ? 300000 : 180000;
 
       // Se "ready" não disparar no tempo limite, tenta reconectar automaticamente (1 vez)
       clienteWA._readyTimeout = setTimeout(async () => {

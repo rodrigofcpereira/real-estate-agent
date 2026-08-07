@@ -151,7 +151,7 @@
         </div>
         <button class="btn btn-primary" onclick="abrirModalMensagem()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          Enviar mensagem
+          <span>Enviar mensagem</span>
         </button>
       </div>
     </header>
@@ -212,14 +212,26 @@
         <button class="chip chip-purple" id="chip-aniversariantes"  onclick="setChip('aniversariantes')">🎂 Aniversários</button>
       </div>
 
-
     </section>
+
+    <!-- Abas de tipo de cliente -->
+    <div class="abas-clientes">
+      <button class="aba aba-active" id="aba-proprietario" onclick="setAba('proprietario')">
+        Proprietários <span class="aba-count" id="count-proprietario">0</span>
+      </button>
+      <button class="aba" id="aba-locatario" onclick="setAba('locatario')">
+        Locatários <span class="aba-count" id="count-locatario">0</span>
+      </button>
+      <button class="aba" id="aba-outro" onclick="setAba('outro')">
+        Outros <span class="aba-count" id="count-outro">0</span>
+      </button>
+    </div>
 
     <!-- Table -->
     <section class="table-section">
       <div class="table-card">
         <div class="table-header">
-          <span class="table-title">Proprietários <span class="table-count" id="tableCount">0</span></span>
+          <span class="table-title"><span id="tableLabel">Proprietários</span> <span class="table-count" id="tableCount">0</span></span>
           <button class="btn btn-primary btn-sm-icon" onclick="abrirFormCliente()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Novo cliente
@@ -229,7 +241,7 @@
           <table id="tabelaImoveis">
             <thead>
               <tr>
-                <th>Proprietário</th>
+                <th>Nome</th>
                 <th>Telefone</th>
                 <th>Apartamento</th>
                 <th>Nascimento</th>
@@ -248,8 +260,8 @@
           </div>
         </div>
         <div id="paginacao" class="paginacao"></div>
-        </div>
-      </section>
+      </div>
+    </section>
 
     </div><!-- /page-dashboard -->
 
@@ -363,14 +375,21 @@
 
         <!-- Painel de adicionar clientes (hidden por padrão) -->
         <div id="trans-adicionar-painel" class="trans-adicionar-painel" style="display:none;">
-          <div class="trans-adicionar-header">
-            <input type="text" id="trans-adicionar-busca" class="disparo-busca" placeholder="🔍 Buscar cliente por nome, apto ou telefone..." oninput="transFilterAdicionarClientes()" />
-            <div class="trans-adicionar-btns">
+          <div class="disparo-clientes-header">
+            <span>Selecionar clientes</span>
+            <div class="disparo-tipo-filtros">
               <button class="btn btn-ghost btn-sm" onclick="transSelAdicionarTodos(true)">Todos</button>
               <button class="btn btn-ghost btn-sm" onclick="transSelAdicionarTodos(false)">Nenhum</button>
+              <div class="disparo-tipo-divider"></div>
+              <button class="btn btn-ghost btn-sm" id="trans-filtrotype-proprietario" onclick="transFilterPorTipo('proprietario')">Proprietários</button>
+              <button class="btn btn-ghost btn-sm" id="trans-filtrotype-locatario" onclick="transFilterPorTipo('locatario')">Locatários</button>
+              <button class="btn btn-ghost btn-sm" id="trans-filtrotype-outro" onclick="transFilterPorTipo('outro')">Outros</button>
             </div>
           </div>
-          <div id="trans-adicionar-lista" class="trans-adicionar-lista"></div>
+          <div class="disparo-busca-wrapper">
+            <input type="text" id="trans-adicionar-busca" class="disparo-busca" placeholder="🔍 Buscar por nome, apartamento ou telefone..." oninput="transFilterAdicionarClientes()" autocomplete="off" />
+          </div>
+          <div id="trans-adicionar-lista" class="trans-adicionar-lista disparo-lista"></div>
           <div class="trans-adicionar-footer">
             <button class="btn btn-primary btn-sm" onclick="transConfirmarAdicionar()">Adicionar selecionados</button>
             <button class="btn btn-ghost btn-sm" onclick="transFecharAdicionarClientes()">Cancelar</button>
@@ -464,7 +483,21 @@
 
       <form id="formCliente" class="client-form" onsubmit="salvarCliente(event)">
         <input type="hidden" id="clienteIndex" value="-1" />
+        <input type="hidden" id="f-tipo" value="proprietario" />
 
+        <!-- Seletor de tipo -->
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>Tipo de cliente <span class="req">*</span></label>
+            <div class="tipo-selector">
+              <button type="button" class="tipo-btn tipo-btn-active" id="tipo-btn-proprietario" onclick="selecionarTipo('proprietario')">Proprietário</button>
+              <button type="button" class="tipo-btn" id="tipo-btn-locatario" onclick="selecionarTipo('locatario')">Locatário</button>
+              <button type="button" class="tipo-btn" id="tipo-btn-outro" onclick="selecionarTipo('outro')">Outro</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nome + Telefone (sempre visíveis) -->
         <div class="form-row">
           <div class="form-group form-col-2">
             <label for="f-nome">Nome completo <span class="req">*</span></label>
@@ -476,29 +509,43 @@
           </div>
         </div>
 
+        <!-- Nascimento (sempre visível) -->
         <div class="form-row">
-          <div class="form-group">
-            <label for="f-apartamento">Nº Apartamento <span class="req">*</span></label>
-            <input type="text" id="f-apartamento" placeholder="Ex: 1401" required />
-          </div>
-          <div class="form-group">
-            <label for="f-condominio">Condomínio <span class="req">*</span></label>
-            <input type="text" id="f-condominio" placeholder="Ex: Praça dos Jacarandas" required />
-          </div>
           <div class="form-group">
             <label for="f-nascimento">Data de nascimento <span class="req">*</span></label>
             <input type="text" id="f-nascimento" placeholder="DD/MM/AAAA" maxlength="10" required />
           </div>
         </div>
 
-        <div class="form-row">
+        <!-- Apartamento + Condomínio (proprietário e locatario) -->
+        <div id="grupo-apartamento-condominio" class="form-row">
+          <div class="form-group">
+            <label for="f-apartamento">Nº Apartamento <span class="req">*</span></label>
+            <input type="text" id="f-apartamento" placeholder="Ex: 1401" />
+          </div>
+          <div class="form-group">
+            <label for="f-condominio">Condomínio <span class="req">*</span></label>
+            <input type="text" id="f-condominio" placeholder="Ex: Praça dos Jacarandas" />
+          </div>
+        </div>
+
+        <!-- Observações (somente outro) -->
+        <div id="grupo-observacoes" class="form-row" style="display:none;">
+          <div class="form-group" style="flex:1">
+            <label for="f-observacoes">Observações</label>
+            <textarea id="f-observacoes" placeholder="Informações adicionais sobre este contato..." rows="3" style="resize:vertical;"></textarea>
+          </div>
+        </div>
+
+        <!-- Datas de contrato (somente proprietário) -->
+        <div id="grupo-contrato" class="form-row">
           <div class="form-group">
             <label for="f-inicio">Início do contrato <span class="req">*</span></label>
-            <input type="text" id="f-inicio" placeholder="DD/MM/AAAA" maxlength="10" required />
+            <input type="text" id="f-inicio" placeholder="DD/MM/AAAA" maxlength="10" />
           </div>
           <div class="form-group">
             <label for="f-termino">Término do contrato <span class="req">*</span></label>
-            <input type="text" id="f-termino" placeholder="DD/MM/AAAA" maxlength="10" required />
+            <input type="text" id="f-termino" placeholder="DD/MM/AAAA" maxlength="10" />
           </div>
         </div>
 
@@ -772,9 +819,15 @@
           Destinatários
           <span class="disparo-counter" id="disparo-counter"><strong>0</strong> clientes selecionados</span>
         </span>
-        <div class="disparo-clientes-header-btns">
+        <div class="disparo-tipo-filtros">
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(true)">Todos</button>
           <button class="btn btn-ghost btn-sm" onclick="selecionarTodosClientes(false)">Nenhum</button>
+          <div class="disparo-tipo-divider"></div>
+          <button class="btn btn-ghost btn-sm" id="filtrotype-proprietario" onclick="filtrarDestinatariosPorTipo('proprietario')">Proprietários</button>
+          <button class="btn btn-ghost btn-sm" id="filtrotype-locatario" onclick="filtrarDestinatariosPorTipo('locatario')">Locatários</button>
+          <button class="btn btn-ghost btn-sm" id="filtrotype-outro" onclick="filtrarDestinatariosPorTipo('outro')">Outros</button>
+          <div class="disparo-tipo-divider"></div>
+          <button class="btn btn-ghost btn-sm" id="filtrotype-teste" onclick="abrirModalNumerosTeste()">🧪 Teste</button>
         </div>
       </div>
 
@@ -785,6 +838,48 @@
       <div class="disparo-lista" id="disparo-lista"></div>
 
 
+    </div>
+  </div>
+
+  <!-- ===== MODAL CONFIRMAÇÃO DE ENVIO ===== -->
+  <div id="modalConfirmEnvio" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-confirm-envio">
+      <div class="modal-header">
+        <h2>Confirmar envio</h2>
+        <button class="modal-close" onclick="fecharConfirmEnvio()">✕</button>
+      </div>
+      <div class="confirm-envio-body">
+        <p class="confirm-envio-desc">A mensagem será enviada para <strong id="confirm-envio-total"></strong>:</p>
+        <ul id="confirm-envio-lista" class="confirm-envio-lista"></ul>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharConfirmEnvio()">Cancelar</button>
+        <button class="btn btn-primary" id="confirm-envio-btn">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL NÚMEROS DE TESTE ===== -->
+  <div id="modalNumerosTeste" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-numteste">
+      <div class="modal-header">
+        <h2>🧪 Números de Teste</h2>
+        <button class="modal-close" onclick="fecharModalNumerosTeste()">✕</button>
+      </div>
+
+      <div class="numteste-add">
+        <input type="text" id="nt-nome" placeholder="Nome (opcional)" />
+        <input type="text" id="nt-tel" placeholder="(81) 99999-9999" maxlength="15" oninput="this.value=formatarTelefone(this.value)" style="min-width:160px;flex:2;" />
+        <input type="number" id="nt-limite" placeholder="Limite de envios" min="1" value="3" style="width:130px;" />
+        <button class="btn btn-primary btn-sm" onclick="adicionarNumeroTeste()">Adicionar</button>
+      </div>
+
+      <div id="nt-lista" class="numteste-lista"></div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModalNumerosTeste()">Fechar</button>
+        <button class="btn btn-primary" onclick="usarNumerosTeste()">Usar na lista</button>
+      </div>
     </div>
   </div>
 

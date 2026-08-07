@@ -19,6 +19,14 @@ service firebase.storage {
                     // Vídeos: até 200 MB
                     (request.resource.contentType.matches('video/.*')
                      && request.resource.size <= 200 * 1024 * 1024)
+                    ||
+                    // PDFs e documentos: até 20 MB
+                    (request.resource.contentType.matches('application/pdf')
+                     && request.resource.size <= 20 * 1024 * 1024)
+                    ||
+                    // Outros documentos (doc, docx, xls, etc): até 20 MB
+                    (request.resource.contentType.matches('application/.*')
+                     && request.resource.size <= 20 * 1024 * 1024)
                   );
 
       allow delete: if request.auth != null

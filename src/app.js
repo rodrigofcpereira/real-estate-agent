@@ -40,6 +40,7 @@ let unsubscribePropriedades = null;
 let todosOsDados = [];
 let dadosFiltrados = [];
 let chipAtivo = 'todos';
+let abaAtiva = "proprietario"; // "proprietario" | "locatario" | "outro"
 let paginaAtual = 1;
 const ITENS_POR_PAGINA = 30;
 
@@ -117,9 +118,9 @@ function carregarDados() {
         data._firestoreId = doc.id;
         todosOsDados.push(data);
       });
-      dadosFiltrados = [...todosOsDados];
       atualizarKPIs();
-      renderizarTabela(dadosFiltrados);
+      atualizarContadoresAbas();
+      aplicarFiltros();
     }, error => {
       console.error("Erro ao carregar clientes:", error);
       mostrarToast("❌ Erro ao carregar dados do servidor.", "err");
@@ -167,15 +168,18 @@ function isAniversariante(r) {
 
 // ---- Atualizar KPIs ----
 function atualizarKPIs() {
-  const total    = todosOsDados.length;
-  const vencidos = todosOsDados.filter(isVencido).length;
-  const ativos   = total - vencidos;
-  const bdays    = todosOsDados.filter(isAniversariante).length;
+  const total         = todosOsDados.length;
+  const proprietarios = todosOsDados.filter(r => (r.tipo || "proprietario") === "proprietario");
+  const vencidos      = proprietarios.filter(isVencido).length;
+  const ativos        = proprietarios.length - vencidos;
+  const bdays         = todosOsDados.filter(isAniversariante).length;
 
-  document.getElementById("kpiTotal").textContent        = total;
-  document.getElementById("qtdVencidos").textContent     = vencidos;
-  document.getElementById("kpiAtivos").textContent       = ativos;
+  document.getElementById("kpiTotal").textContent           = total;
+  document.getElementById("qtdVencidos").textContent        = vencidos;
+  document.getElementById("kpiAtivos").textContent          = ativos;
   document.getElementById("kpiAniversariantes").textContent = bdays;
+
+  atualizarContadoresAbas();
 }
 
 // ---- Renderizar tabela ----
@@ -199,7 +203,7 @@ function renderizarTabela(dados) {
 
   paginaDados.forEach(r => {
     const tr = document.createElement("tr");
-    const vencido     = isVencido(r);
+    const vencido     = (r.tipo || "proprietario") === "proprietario" && isVencido(r);
     const aniversario = isAniversariante(r);
 
     if (vencido)     tr.classList.add("vencido");
@@ -214,18 +218,9 @@ function renderizarTabela(dados) {
       statusBadge = `<span class="badge badge-active">Ativo</span>`;
     }
 
-    // Índice real no array todosOsDados
     const idx = todosOsDados.indexOf(r);
 
-    tr.innerHTML = `
-      <td>${r.nome}</td>
-      <td>${r.telefone}</td>
-      <td>${r.apartamento}</td>
-      <td>${r.nascimento}</td>
-      <td>${r.inicioContrato}</td>
-      <td>${r.terminoContrato}</td>
-      <td>${r.condominio}</td>
-      <td>${statusBadge}</td>
+    const acoes = `
       <td class="td-actions">
         <div class="row-actions">
           <button class="btn-icon btn-icon-edit" title="Editar" onclick="editarCliente(${idx})">
@@ -243,8 +238,76 @@ function renderizarTabela(dados) {
             </svg>
           </button>
         </div>
-      </td>
-    `;
+      </td>`;
+
+    const modoGlobalRow = chipAtivo === 'aniversariantes' || document.getElementById("campoPesquisa").value.trim() !== '';
+    if (modoGlobalRow) {
+      const tipo = r.tipo || "proprietario";
+      const tipoLabel = { proprietario: "Proprietário", locatario: "Locatário", outro: "Outro" }[tipo] || tipo;
+      const tipoClass = { proprietario: "di-badge-prop", locatario: "di-badge-loc", outro: "di-badge-outro" }[tipo] || '';
+      tr.innerHTML = `
+        <td><div class="td-nome-tipo"><span class="di-badge ${tipoClass}">${tipoLabel}</span><span class="td-nome-texto">${r.nome}</span></div></td>
+        <td>${r.telefone}</td>
+        <td>${r.nascimento || "—"}</td>
+        <td>${r.apartamento || "—"}</td>
+        <td>${r.condominio || "—"}</td>
+        <td>${r.inicioContrato || "—"}</td>
+        <td>${r.terminoContrato || "—"}</td>
+        <td class="obs-cell-bday"></td>
+        <td>${statusBadge}</td>
+        ${acoes}`;
+      const obsCell = tr.querySelector(".obs-cell-bday");
+      if (r.observacoes) {
+        const span = document.createElement("span");
+        span.setAttribute("title", r.observacoes);
+        span.style.cssText = "display:block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        span.textContent = r.observacoes;
+        obsCell.appendChild(span);
+      } else {
+        obsCell.style.color = "var(--text-light)";
+        obsCell.textContent = "—";
+      }
+    } else if (abaAtiva === "proprietario") {
+      tr.innerHTML = `
+        <td>${r.nome}</td>
+        <td>${r.telefone}</td>
+        <td>${r.apartamento || "—"}</td>
+        <td>${r.nascimento || "—"}</td>
+        <td>${r.inicioContrato || "—"}</td>
+        <td>${r.terminoContrato || "—"}</td>
+        <td>${r.condominio || "—"}</td>
+        <td>${statusBadge}</td>
+        ${acoes}`;
+    } else if (abaAtiva === "locatario") {
+      tr.innerHTML = `
+        <td>${r.nome}</td>
+        <td>${r.telefone}</td>
+        <td>${r.apartamento || "—"}</td>
+        <td>${r.nascimento || "—"}</td>
+        <td>${r.condominio || "—"}</td>
+        <td>${statusBadge}</td>
+        ${acoes}`;
+    } else {
+      tr.innerHTML = `
+        <td>${r.nome}</td>
+        <td>${r.telefone}</td>
+        <td>${r.nascimento || "—"}</td>
+        <td class="obs-cell"></td>
+        <td>${statusBadge}</td>
+        ${acoes}`;
+      const obsCell = tr.querySelector(".obs-cell");
+      if (r.observacoes) {
+        const span = document.createElement("span");
+        span.setAttribute("title", r.observacoes);
+        span.style.cssText = "display:block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        span.textContent = r.observacoes;
+        obsCell.appendChild(span);
+      } else {
+        obsCell.style.color = "var(--text-light)";
+        obsCell.textContent = "—";
+      }
+    }
+
     tbody.appendChild(tr);
   });
 
@@ -294,22 +357,38 @@ function pesquisar() {
   aplicarFiltros(termo);
 }
 
-// ---- Aplicar filtros (chip + pesquisa) ----
+// ---- Aplicar filtros (aba + chip + pesquisa) ----
 function aplicarFiltros(termoBusca) {
   const termo = termoBusca !== undefined
     ? termoBusca
     : document.getElementById("campoPesquisa").value.toLowerCase().trim();
 
-  let base = [...todosOsDados];
+  const modoGlobal = chipAtivo === 'aniversariantes' || termo !== '';
 
-  if (chipAtivo === 'vencidos') {
-    base = base.filter(isVencido);
-  } else if (chipAtivo === 'aniversariantes') {
-    base = base.filter(isAniversariante);
+  let base;
+  if (chipAtivo === 'aniversariantes') {
+    base = todosOsDados.filter(isAniversariante);
+  } else if (termo !== '') {
+    base = todosOsDados;
+    if (chipAtivo === 'vencidos') base = base.filter(isVencido);
+  } else {
+    base = todosOsDados.filter(r => (r.tipo || "proprietario") === abaAtiva);
+    if (chipAtivo === 'vencidos') base = base.filter(isVencido);
   }
 
   if (termo) {
     base = base.filter(r => Object.values(r).some(v => typeof v === 'string' && v.toLowerCase().includes(termo)));
+  }
+
+  // Atualiza cabeçalho e label para modo global (pesquisa ou aniversariantes)
+  const labelEl = document.getElementById("tableLabel");
+  if (modoGlobal && chipAtivo !== 'aniversariantes') {
+    atualizarCabecalhoTabela('_global');
+    if (labelEl) labelEl.textContent = 'Todos os contatos';
+  } else if (chipAtivo !== 'aniversariantes') {
+    atualizarCabecalhoTabela(abaAtiva);
+    const labels = { proprietario: "Proprietários", locatario: "Locatários", outro: "Outros" };
+    if (labelEl) labelEl.textContent = labels[abaAtiva];
   }
 
   dadosFiltrados = base;
@@ -319,11 +398,81 @@ function aplicarFiltros(termoBusca) {
 
 // ---- Set chip ----
 function setChip(tipo) {
+  if (tipo === 'vencidos' && abaAtiva !== 'proprietario') {
+    abaAtiva = 'proprietario';
+    ["proprietario", "locatario", "outro"].forEach(t => {
+      const btn = document.getElementById("aba-" + t);
+      if (btn) btn.classList.toggle("aba-active", t === "proprietario");
+    });
+    const chipsVencidos = document.getElementById("chip-vencidos");
+    if (chipsVencidos) chipsVencidos.style.display = "";
+    const labelEl = document.getElementById("tableLabel");
+    if (labelEl) labelEl.textContent = "Proprietários";
+    atualizarCabecalhoTabela("proprietario");
+  }
   chipAtivo = tipo;
   document.querySelectorAll(".chip").forEach(c => c.classList.remove("chip-active"));
   const chip = document.getElementById("chip-" + tipo);
   if (chip) chip.classList.add("chip-active");
+  atualizarCabecalhoTabela(abaAtiva);
+  const labelEl = document.getElementById("tableLabel");
+  if (labelEl) labelEl.textContent = tipo === 'aniversariantes' ? 'Aniversariantes' : { proprietario: "Proprietários", locatario: "Locatários", outro: "Outros" }[abaAtiva];
   aplicarFiltros();
+}
+
+// ---- Trocar aba de tipo de cliente ----
+function setAba(tipo) {
+  abaAtiva  = tipo;
+  chipAtivo = "todos";
+  paginaAtual = 1;
+
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const btn = document.getElementById("aba-" + t);
+    if (btn) btn.classList.toggle("aba-active", t === tipo);
+  });
+
+  const chipsVencidos = document.getElementById("chip-vencidos");
+  if (chipsVencidos) chipsVencidos.style.display = tipo === "proprietario" ? "" : "none";
+
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("chip-active"));
+  const chipTodos = document.getElementById("chip-todos");
+  if (chipTodos) chipTodos.classList.add("chip-active");
+
+  const labels = { proprietario: "Proprietários", locatario: "Locatários", outro: "Outros" };
+  const labelEl = document.getElementById("tableLabel");
+  if (labelEl) labelEl.textContent = labels[tipo] || tipo;
+
+  atualizarCabecalhoTabela(tipo);
+  aplicarFiltros();
+}
+
+function atualizarCabecalhoTabela(tipo) {
+  const tr = document.querySelector("#tabelaImoveis thead tr");
+  if (!tr) return;
+
+  if (chipAtivo === 'aniversariantes' || tipo === '_global') {
+    tr.innerHTML = `<th>Nome</th><th>Telefone</th><th>Nascimento</th><th>Apartamento</th><th>Condomínio</th><th>Início contrato</th><th>Término contrato</th><th>Observações</th><th>Status</th><th></th>`;
+    return;
+  }
+
+  const colunas = {
+    proprietario: `<th>Nome</th><th>Telefone</th><th>Apartamento</th><th>Nascimento</th><th>Início contrato</th><th>Término contrato</th><th>Condomínio</th><th>Status</th><th></th>`,
+    locatario:    `<th>Nome</th><th>Telefone</th><th>Apartamento</th><th>Nascimento</th><th>Condomínio</th><th>Status</th><th></th>`,
+    outro:        `<th>Nome</th><th>Telefone</th><th>Nascimento</th><th>Observações</th><th>Status</th><th></th>`,
+  };
+  tr.innerHTML = colunas[tipo] || colunas.proprietario;
+}
+
+function atualizarContadoresAbas() {
+  const contadores = { proprietario: 0, locatario: 0, outro: 0 };
+  todosOsDados.forEach(r => {
+    const t = r.tipo || "proprietario";
+    if (contadores[t] !== undefined) contadores[t]++;
+  });
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const el = document.getElementById("count-" + t);
+    if (el) el.textContent = contadores[t];
+  });
 }
 
 // ---- Limpar pesquisa ----
@@ -380,6 +529,33 @@ function abrirModalMensagem() {
   abrirModalMensagemDirect();
 }
 
+const TIPO_LABEL = { proprietario: "Proprietário", locatario: "Locatário", outro: "Outro" };
+const TIPO_CLASS = { proprietario: "di-badge-prop", locatario: "di-badge-loc", outro: "di-badge-outro" };
+
+function _esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderDisparoItem(c, idx) {
+  const tipo = c.tipo || "proprietario";
+  const badge = `<span class="di-badge ${TIPO_CLASS[tipo] || ''}">${TIPO_LABEL[tipo] || tipo}</span>`;
+  const sub = c.apartamento
+    ? `Apto ${_esc(c.apartamento)} · ${_esc(c.telefone)}${c.condominio ? ' · ' + _esc(c.condominio) : ''}`
+    : _esc(c.telefone);
+  const obs = tipo === "outro" && c.observacoes
+    ? `<div class="disparo-item-obs">${_esc(c.observacoes)}</div>`
+    : '';
+  return `
+    <label class="disparo-item">
+      <input type="checkbox" class="disparo-check" value="${idx}" onchange="atualizarContadorDisparo()" checked />
+      <div class="disparo-item-info">
+        <div class="disparo-item-nome">${_esc(c.nome)} ${badge}</div>
+        <div class="disparo-item-sub">${sub}</div>
+        ${obs}
+      </div>
+    </label>`;
+}
+
 function abrirModalMensagemDirect() {
   document.getElementById("disparo-titulo").textContent = "📤 Enviar mensagem";
   document.getElementById("disparo-suggestions").style.display = "flex";
@@ -393,18 +569,18 @@ function abrirModalMensagemDirect() {
   mensagemTipoAtivo = null;
   propIndexDisparo = -1;
 
+  _disparoFiltroTipo = null;
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("filtrotype-" + t);
+    if (b) b.classList.remove("btn-active-tipo");
+  });
+  const btnTeste = document.getElementById("filtrotype-teste");
+  if (btnTeste) btnTeste.classList.remove("btn-active-tipo");
+
   const lista = document.getElementById("disparo-lista");
-  lista.innerHTML = todosOsDados.map((c, i) => `
-    <label class="disparo-item">
-      <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
-      <div class="disparo-item-info">
-        <div class="disparo-item-nome">${c.nome}</div>
-        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
-      </div>
-    </label>`).join('');
+  lista.innerHTML = todosOsDados.map((c, i) => renderDisparoItem(c, i)).join('');
 
   atualizarContadorDisparo();
-  // Limpa busca anterior ao abrir o modal
   const buscaInput = document.getElementById("disparo-busca");
   if (buscaInput) buscaInput.value = "";
   document.getElementById("modalDisparo").style.display = "flex";
@@ -412,7 +588,7 @@ function abrirModalMensagemDirect() {
 
 // ---- Fechar modais clicando fora ----
 document.addEventListener("click", e => {
-  ["modalMsg", "modalCliente", "modalConfirm", "modalDisparo", "modalWA", "modalProp"].forEach(id => {
+  ["modalMsg", "modalCliente", "modalConfirm", "modalDisparo", "modalWA", "modalProp", "modalConfirmEnvio"].forEach(id => {
     const el = document.getElementById(id);
     if (e.target === el) el.style.display = "none";
   });
@@ -440,6 +616,7 @@ function abrirFormCliente() {
   document.getElementById("btnSalvar").textContent   = "Salvar cliente";
   document.getElementById("clienteIndex").value      = -1;
   document.getElementById("formCliente").reset();
+  selecionarTipo("proprietario");
   limparErrosForm();
   document.getElementById("modalCliente").style.display = "flex";
   setTimeout(() => document.getElementById("f-nome").focus(), 100);
@@ -454,13 +631,24 @@ function editarCliente(idx) {
   document.getElementById("btnSalvar").textContent  = "Salvar alterações";
   document.getElementById("clienteIndex").value     = idx;
 
-  document.getElementById("f-nome").value         = r.nome;
-  document.getElementById("f-telefone").value     = formatarTelefone(r.telefone);
-  document.getElementById("f-apartamento").value  = r.apartamento;
-  document.getElementById("f-condominio").value   = r.condominio;
-  document.getElementById("f-nascimento").value   = r.nascimento;
-  document.getElementById("f-inicio").value       = r.inicioContrato;
-  document.getElementById("f-termino").value      = r.terminoContrato;
+  const tipo = r.tipo || "proprietario";
+  selecionarTipo(tipo);
+
+  document.getElementById("f-nome").value       = r.nome;
+  document.getElementById("f-telefone").value   = formatarTelefone(r.telefone);
+  document.getElementById("f-nascimento").value = r.nascimento;
+
+  if (tipo === "proprietario" || tipo === "locatario") {
+    document.getElementById("f-apartamento").value = r.apartamento || "";
+    document.getElementById("f-condominio").value  = r.condominio  || "";
+  }
+  if (tipo === "proprietario") {
+    document.getElementById("f-inicio").value  = r.inicioContrato  || "";
+    document.getElementById("f-termino").value = r.terminoContrato || "";
+  }
+  if (tipo === "outro") {
+    document.getElementById("f-observacoes").value = r.observacoes || "";
+  }
 
   limparErrosForm();
   document.getElementById("modalCliente").style.display = "flex";
@@ -484,15 +672,26 @@ async function salvarCliente(e) {
     mostrarToast("❌ Armazenamento cheio. Entre em contato com o administrador.", "err");
     return;
   }
+  const tipo = document.getElementById("f-tipo").value || "proprietario";
+
   const cliente = {
-    nome:           document.getElementById("f-nome").value.trim(),
-    telefone:       document.getElementById("f-telefone").value.trim(),
-    apartamento:    document.getElementById("f-apartamento").value.trim(),
-    condominio:     document.getElementById("f-condominio").value.trim(),
-    nascimento:     document.getElementById("f-nascimento").value.trim(),
-    inicioContrato: document.getElementById("f-inicio").value.trim(),
-    terminoContrato:document.getElementById("f-termino").value.trim(),
+    tipo,
+    nome:       document.getElementById("f-nome").value.trim(),
+    telefone:   document.getElementById("f-telefone").value.trim(),
+    nascimento: document.getElementById("f-nascimento").value.trim(),
   };
+
+  if (tipo === "proprietario" || tipo === "locatario") {
+    cliente.apartamento = document.getElementById("f-apartamento").value.trim();
+    cliente.condominio  = document.getElementById("f-condominio").value.trim();
+  }
+  if (tipo === "proprietario") {
+    cliente.inicioContrato  = document.getElementById("f-inicio").value.trim();
+    cliente.terminoContrato = document.getElementById("f-termino").value.trim();
+  }
+  if (tipo === "outro") {
+    cliente.observacoes = document.getElementById("f-observacoes").value.trim();
+  }
 
   try {
     if (idx === -1) {
@@ -508,7 +707,7 @@ async function salvarCliente(e) {
     }
   } catch (err) {
     console.error("Erro ao salvar cliente:", err);
-    mostrarToast("❌ Erro ao salvar no servidor.", "err");
+    mostrarToast(`❌ Erro ao salvar cliente: ${err.message || err}`, "err");
   }
 
   fecharFormCliente();
@@ -517,7 +716,16 @@ async function salvarCliente(e) {
 // ---- Validar form ----
 function validarForm() {
   let ok = true;
-  const campos = ["f-nome","f-telefone","f-apartamento","f-condominio","f-nascimento","f-inicio","f-termino"];
+  const tipo = document.getElementById("f-tipo").value || "proprietario";
+
+  const camposBase     = ["f-nome", "f-telefone", "f-nascimento"];
+  const camposAptCond  = ["f-apartamento", "f-condominio"];
+  const camposContrato = ["f-inicio", "f-termino"];
+
+  let campos = [...camposBase];
+  if (tipo === "proprietario" || tipo === "locatario") campos = [...campos, ...camposAptCond];
+  if (tipo === "proprietario") campos = [...campos, ...camposContrato];
+
   campos.forEach(id => {
     const el = document.getElementById(id);
     if (!el.value.trim()) {
@@ -528,8 +736,9 @@ function validarForm() {
     }
   });
 
-  // Validar formato de data nos campos de data
-  ["f-nascimento","f-inicio","f-termino"].forEach(id => {
+  const camposData = ["f-nascimento"];
+  if (tipo === "proprietario") camposData.push("f-inicio", "f-termino");
+  camposData.forEach(id => {
     const el  = document.getElementById(id);
     const val = el.value.trim();
     if (val && !/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
@@ -544,6 +753,37 @@ function validarForm() {
 
 function limparErrosForm() {
   document.querySelectorAll(".client-form .input-error").forEach(el => el.classList.remove("input-error"));
+}
+
+// ---- Seletor de tipo: mostra/esconde grupos de campos ----
+function selecionarTipo(tipo) {
+  document.getElementById("f-tipo").value = tipo;
+
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const btn = document.getElementById("tipo-btn-" + t);
+    if (btn) btn.classList.toggle("tipo-btn-active", t === tipo);
+  });
+
+  const grupoAptCond   = document.getElementById("grupo-apartamento-condominio");
+  const grupoContrato  = document.getElementById("grupo-contrato");
+  const grupoObs       = document.getElementById("grupo-observacoes");
+  const aptEl    = document.getElementById("f-apartamento");
+  const condEl   = document.getElementById("f-condominio");
+  const inicioEl = document.getElementById("f-inicio");
+  const terminoEl = document.getElementById("f-termino");
+
+  const mostraAptCond  = tipo === "proprietario" || tipo === "locatario";
+  const mostraContrato = tipo === "proprietario";
+  const mostraObs      = tipo === "outro";
+
+  if (grupoAptCond)  grupoAptCond.style.display  = mostraAptCond  ? "" : "none";
+  if (grupoContrato) grupoContrato.style.display = mostraContrato ? "" : "none";
+  if (grupoObs)      grupoObs.style.display      = mostraObs      ? "" : "none";
+
+  if (aptEl)    aptEl.required    = mostraAptCond;
+  if (condEl)   condEl.required   = mostraAptCond;
+  if (inicioEl) inicioEl.required  = mostraContrato;
+  if (terminoEl) terminoEl.required = mostraContrato;
 }
 
 // ---- Fechar form ----
@@ -729,16 +969,48 @@ async function registrarDiagnostico(evento) {
     return true;
   }
 
+  function _mostrarBannerErro(msg, detalhe) {
+    // Não mostra erros de rede/script externos — só erros do próprio app
+    if (msg.includes("ResizeObserver") || msg.includes("Script error")) return;
+    let banner = document.getElementById("_err-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "_err-banner";
+      banner.style.cssText = [
+        "position:fixed","bottom:72px","left:50%","transform:translateX(-50%)",
+        "z-index:9999","background:#1e293b","color:#f8fafc",
+        "border-left:4px solid #ef4444","border-radius:10px",
+        "padding:12px 16px","max-width:420px","width:calc(100vw - 32px)",
+        "box-shadow:0 8px 32px rgba(0,0,0,.35)","font-family:inherit",
+        "display:flex","gap:10px","align-items:flex-start","font-size:.8rem"
+      ].join(";");
+      document.body.appendChild(banner);
+    }
+    const arquivoLinha = detalhe ? ` (${detalhe})` : "";
+    banner.innerHTML = `
+      <span style="font-size:1.1rem;flex-shrink:0">⚠️</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;color:#fca5a5;margin-bottom:2px">Erro no aplicativo</div>
+        <div style="color:#cbd5e1;word-break:break-word">${msg.slice(0, 120)}${arquivoLinha}</div>
+        <div style="color:#64748b;font-size:.72rem;margin-top:4px">Registrado automaticamente. Tente recarregar se o app não responder.</div>
+      </div>
+      <button onclick="this.parentElement.remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:1rem;flex-shrink:0;padding:0;line-height:1">✕</button>`;
+    clearTimeout(banner._timer);
+    banner._timer = setTimeout(() => banner.remove(), 8000);
+  }
+
   // Erros síncronos (throw, TypeError, ReferenceError, etc.)
   window.onerror = function(message, source, lineno, colno, error) {
     const msg = String(message || "");
     const assinatura = msg.slice(0, 100);
     if (_frontDeveReportar(assinatura)) {
+      const arquivo = (source || "").split("/").pop();
+      _mostrarBannerErro(msg, arquivo ? `${arquivo}:${lineno}` : null);
       registrarDiagnostico({
         tipo: "frontend_erro",
         dados: {
           mensagem: msg.slice(0, 500),
-          source: (source || "").split("/").pop(), // só o nome do arquivo, não path completo
+          source: arquivo,
           linha: lineno,
           coluna: colno,
           stack: (error?.stack || "").slice(0, 1000),
@@ -754,6 +1026,7 @@ async function registrarDiagnostico(evento) {
     const msg = reason?.message || String(reason || "");
     const assinatura = "rej:" + msg.slice(0, 100);
     if (_frontDeveReportar(assinatura)) {
+      _mostrarBannerErro(msg);
       registrarDiagnostico({
         tipo: "frontend_unhandled_rejection",
         dados: {
@@ -1034,14 +1307,7 @@ function aplicarSugestao(tipo) {
     mensagemTipoAtivo = null;
 
     const lista = document.getElementById("disparo-lista");
-    lista.innerHTML = todosOsDados.map((c, i) => `
-      <label class="disparo-item">
-        <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
-        <div class="disparo-item-info">
-          <div class="disparo-item-nome">${c.nome}</div>
-          <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
-        </div>
-      </label>`).join('');
+    lista.innerHTML = todosOsDados.map((c, i) => renderDisparoItem(c, i)).join('');
     atualizarContadorDisparo();
     return;
   }
@@ -1050,7 +1316,7 @@ function aplicarSugestao(tipo) {
     clientes = todosOsDados.filter(isAniversariante);
     msgFn = r => `Feliz aniversário, {nome}! 🎉 A equipe LF Imóveis deseja um dia incrível para você!`;
   } else if (tipo === "contrato_vencido") {
-    clientes = todosOsDados.filter(isVencido);
+    clientes = todosOsDados.filter(r => (r.tipo || "proprietario") === "proprietario").filter(isVencido);
     msgFn = r => `Olá, {nome}! Seu contrato do apartamento {apartamento} venceu em {terminoContrato}. Entre em contato para renovação.`;
   } else if (tipo === "ano_novo") {
     clientes = todosOsDados;
@@ -1074,17 +1340,7 @@ function aplicarSugestao(tipo) {
     return;
   }
 
-  lista.innerHTML = clientes.map(c => {
-    const idx = todosOsDados.indexOf(c);
-    return `
-    <label class="disparo-item">
-      <input type="checkbox" class="disparo-check" value="${idx}" onchange="atualizarContadorDisparo()" checked />
-      <div class="disparo-item-info">
-        <div class="disparo-item-nome">${c.nome}</div>
-        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
-      </div>
-    </label>`;
-  }).join('');
+  lista.innerHTML = clientes.map(c => renderDisparoItem(c, todosOsDados.indexOf(c))).join('');
 
   mensagemTipoAtivo = { tipo, titulo: titulos[tipo], msgFn };
   atualizarContadorDisparo();
@@ -2211,26 +2467,34 @@ function transAbrirAdicionarClientes() {
   const painel = document.getElementById("trans-adicionar-painel");
   painel.style.display = "block";
   document.getElementById("trans-adicionar-busca").value = "";
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("trans-filtrotype-" + t);
+    if (b) b.classList.remove("btn-active-tipo");
+  });
+  _transRenderAdicionarLista();
+}
 
-  // Verifica quais itens já estão na lista (por nome + telefone + apartamento juntos)
+function _transRenderAdicionarLista(filtroTipo) {
   const jaAdicionados = new Set((_transDetalheData?.destinatarios || []).map(d =>
     `${(d.nome||"").toLowerCase()}|${(d.telefone||"").replace(/\D/g,"")}|${(d.apartamento||"").toLowerCase()}`
   ));
 
+  const base = filtroTipo
+    ? todosOsDados.filter(c => (c.tipo || "proprietario") === filtroTipo)
+    : todosOsDados;
+
   const lista = document.getElementById("trans-adicionar-lista");
-  lista.innerHTML = (todosOsDados || []).map((c, i) => {
+  lista.innerHTML = (base || []).map((c, i) => {
+    const idx = todosOsDados.indexOf(c);
     const chave = `${(c.nome||"").toLowerCase()}|${(c.telefone||"").replace(/\D/g,"")}|${(c.apartamento||"").toLowerCase()}`;
     const jaExiste = jaAdicionados.has(chave);
-    return `
-      <label class="trans-adicionar-item${jaExiste ? " trans-adicionar-disabled" : ""}">
-        <input type="checkbox" class="trans-adicionar-check" value="${i}" ${jaExiste ? "disabled checked" : ""} />
-        <div class="trans-adicionar-info">
-          <span class="trans-adicionar-nome">${c.nome}</span>
-          <span class="trans-adicionar-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? " · " + c.condominio : ""}</span>
-        </div>
-        ${jaExiste ? '<span class="trans-adicionar-tag">já na lista</span>' : ""}
-      </label>
-    `;
+    const itemHtml = renderDisparoItem(c, idx)
+      .replace('class="disparo-check"', `class="disparo-check trans-adicionar-check" ${jaExiste ? "disabled" : ""}`)
+      .replace('class="disparo-item"', `class="disparo-item${jaExiste ? " trans-adicionar-disabled" : ""}"`)
+      + (jaExiste ? '' : '');
+    return jaExiste
+      ? itemHtml.replace('</label>', '<span class="trans-adicionar-tag">já na lista</span></label>')
+      : itemHtml;
   }).join("");
 }
 
@@ -2240,17 +2504,26 @@ function transFecharAdicionarClientes() {
 
 function transFilterAdicionarClientes() {
   const termo = (document.getElementById("trans-adicionar-busca")?.value || "").toLowerCase().trim();
-  document.querySelectorAll(".trans-adicionar-item").forEach(item => {
+  document.querySelectorAll("#trans-adicionar-lista .disparo-item").forEach(item => {
     if (!termo) { item.style.display = ""; return; }
-    const nome = (item.querySelector(".trans-adicionar-nome")?.textContent || "").toLowerCase();
-    const sub = (item.querySelector(".trans-adicionar-sub")?.textContent || "").toLowerCase();
+    const nome = (item.querySelector(".disparo-item-nome")?.textContent || "").toLowerCase();
+    const sub  = (item.querySelector(".disparo-item-sub")?.textContent  || "").toLowerCase();
     item.style.display = (nome.includes(termo) || sub.includes(termo)) ? "" : "none";
   });
 }
 
+function transFilterPorTipo(tipo) {
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("trans-filtrotype-" + t);
+    if (b) b.classList.toggle("btn-active-tipo", t === tipo);
+  });
+  document.getElementById("trans-adicionar-busca").value = "";
+  _transRenderAdicionarLista(tipo);
+}
+
 function transSelAdicionarTodos(sel) {
-  document.querySelectorAll(".trans-adicionar-item").forEach(item => {
-    if (item.style.display === "none") return; // respeita filtro
+  document.querySelectorAll("#trans-adicionar-lista .disparo-item").forEach(item => {
+    if (item.style.display === "none") return;
     const cb = item.querySelector(".trans-adicionar-check");
     if (cb && !cb.disabled) cb.checked = sel;
   });
@@ -2259,7 +2532,7 @@ function transSelAdicionarTodos(sel) {
 async function transConfirmarAdicionar() {
   if (!_transDetalheId || !db) return;
 
-  const checks = document.querySelectorAll(".trans-adicionar-check:checked:not(:disabled)");
+  const checks = document.querySelectorAll("#trans-adicionar-lista .trans-adicionar-check:checked:not(:disabled)");
   if (checks.length === 0) return mostrarToast("Selecione pelo menos um cliente", "err");
 
   const novos = [];
@@ -2688,18 +2961,29 @@ function renderizarPropriedades() {
         </div>`;
     } else if (fotos.length === 1) {
       const f0 = fotos[0];
+      const src0 = urlFoto(f0);
       imgAreaHtml = `
         <div class="prop-img">
           ${ehVideo(f0)
-            ? `<video src="${urlFoto(f0)}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
-            : `<img src="${urlFoto(f0)}" alt="Foto" />`}
+            ? `<video src="${src0}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
+            : ehPdf(f0)
+              ? `<a href="${src0}" target="_blank" class="prop-img-pdf-thumb" title="Abrir PDF">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                  <span>PDF — clique para abrir</span>
+                </a>`
+              : `<img src="${src0}" alt="Foto" />`}
         </div>`;
     } else {
       const slides = fotos.map(f => {
         const src = urlFoto(f);
         const media = ehVideo(f)
           ? `<video src="${src}" class="prop-img-video" muted playsinline preload="metadata"></video><div class="prop-img-play-icon">▶</div>`
-          : `<img src="${src}" alt="Foto" />`;
+          : ehPdf(f)
+            ? `<a href="${src}" target="_blank" class="prop-img-pdf-thumb" title="Abrir PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                <span>PDF — clique para abrir</span>
+              </a>`
+            : `<img src="${src}" alt="Foto" />`;
         return `<div class="prop-carousel-slide">${media}</div>`;
       }).join('');
       const dots = fotos.map((_, di) =>
@@ -2843,6 +3127,7 @@ async function salvarProp(event) {
     }
   } catch (err) {
     console.error("Erro ao salvar propriedade:", err);
+    mostrarToast(`❌ Erro ao salvar propriedade: ${err.message || err}`, "err");
     mostrarToast("❌ Erro ao salvar no servidor.", "err");
   }
 
@@ -2854,47 +3139,40 @@ async function salvarProp(event) {
 const ESTIMATIVA_CLIENTE = 2048; // 2 KB por cliente
 
 function urlFoto(f) {
-  return typeof f === 'object' && f !== null ? f.url : f;
+  if (typeof f === 'object' && f !== null) return f.url || f.dataUrl || '';
+  return f || '';
 }
 
-// Detecta se uma mídia (data URL, URL HTTPS ou objeto {url,type}) é vídeo
+// Retorna a string de dados (dataUrl ou url) de um objeto de mídia
+function _srcStr(src) {
+  if (typeof src === 'object' && src !== null) return src.dataUrl || src.url || '';
+  return src || '';
+}
+
 function ehVideo(src) {
   if (typeof src === 'object' && src !== null) {
     if (src.type && src.type.startsWith('video/')) return true;
-    const u = src.url || '';
-    return u.startsWith('data:video') || /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(u);
   }
-  if (typeof src === 'string') {
-    if (src.startsWith('data:video')) return true;
-    return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(src);
-  }
-  return false;
+  const u = _srcStr(src);
+  return u.startsWith('data:video') || /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(u);
 }
 
 function ehPdf(src) {
   if (typeof src === 'object' && src !== null) {
     if (src.type && src.type.includes('pdf')) return true;
-    const u = src.url || '';
-    return u.startsWith('data:application/pdf') || /\.pdf(\?|$)/i.test(u);
+    if (src.name && src.name.toLowerCase().endsWith('.pdf')) return true;
   }
-  if (typeof src === 'string') {
-    if (src.startsWith('data:application/pdf')) return true;
-    return /\.pdf(\?|$)/i.test(src);
-  }
-  return false;
+  const u = _srcStr(src);
+  return u.startsWith('data:application/pdf') || /\.pdf(\?|%3F|$)/i.test(u)
+    || u.includes('%2Fpdf_') || u.includes('/pdf_');
 }
 
 function ehImagem(src) {
   if (typeof src === 'object' && src !== null) {
     if (src.type && src.type.startsWith('image/')) return true;
-    const u = src.url || '';
-    return u.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(u);
   }
-  if (typeof src === 'string') {
-    if (src.startsWith('data:image')) return true;
-    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(src);
-  }
-  return false;
+  const u = _srcStr(src);
+  return u.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(u);
 }
 
 // ---- Storage Helpers ----
@@ -2951,20 +3229,26 @@ async function uploadFotos(fotosArray) {
       continue;
     }
     try {
-      // Detecta mime type e extensão a partir do data URL
-      const mimeMatch = foto.match(/^data:([^;]+);/);
+      // Suporta tanto string pura (data URL) quanto { dataUrl, name }
+      const dataUrl   = typeof foto === 'object' ? foto.dataUrl : foto;
+      const origName  = typeof foto === 'object' ? (foto.name || '') : '';
+      const mimeMatch = dataUrl.match(/^data:([^;]+);/);
       const mimetype  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-      const ext       = mimetype.split('/')[1]?.replace('jpeg','jpg').replace('quicktime','mov') || 'bin';
-      const prefix    = mimetype.startsWith('video/') ? 'video' : 'foto';
-      const fileName  = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const ext       = mimetype.split('/')[1]?.replace('jpeg','jpg').replace('quicktime','mov').replace('vnd.openxmlformats-officedocument.wordprocessingml.document','docx').replace('vnd.openxmlformats-officedocument.spreadsheetml.sheet','xlsx') || 'bin';
+      // Usa nome original do arquivo (sanitizado) ou gera um nome técnico como fallback
+      const nomeBase  = origName
+        ? origName.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\s+/g, '_')
+        : `arquivo_${Date.now()}.${ext}`;
+      const fileName  = `${Date.now()}_${nomeBase}`;
       const ref       = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
-      const snapshot  = await ref.putString(foto, "data_url");
+      const snapshot  = await ref.putString(dataUrl, "data_url");
       const url       = await snapshot.ref.getDownloadURL();
-      const tamanho   = calcularTamanhoBase64(foto);
-      urls.push({ url, size: tamanho, type: mimetype });
+      const tamanho   = calcularTamanhoBase64(dataUrl);
+      urls.push({ url, size: tamanho, type: mimetype, name: origName || fileName });
       totalBytes += tamanho;
     } catch (err) {
       console.error("Erro ao fazer upload de mídia:", err);
+      mostrarToast(`❌ Falha ao enviar arquivo: ${err.message || err}`, "err");
     }
   }
   if (totalBytes > 0) await atualizarStorageUsado(totalBytes);
@@ -2987,7 +3271,7 @@ function handleFotos(event) {
   filesToProcess.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      fotosTemp.push(e.target.result);
+      fotosTemp.push({ dataUrl: e.target.result, name: file.name });
       processed++;
       if (processed === filesToProcess.length) renderizarFotosForm();
     };
@@ -3043,16 +3327,30 @@ async function removerFotoForm(idx) {
   fotosTemp.splice(idx, 1);
   renderizarFotosForm();
 
-  // Se a foto já estava no Firebase Storage, deleta o arquivo imediatamente
+  // Se a foto já estava no Firebase Storage, deleta e atualiza Firestore imediatamente
   if (foto && typeof foto === 'object' && foto.url &&
       typeof foto.url === 'string' && foto.url.startsWith('https://firebasestorage')) {
     try {
       const fileRef = storage.refFromURL(foto.url);
+      let bytes = foto.size || 0;
+      if (!bytes) {
+        try { const meta = await fileRef.getMetadata(); bytes = meta.size || 0; } catch (_) {}
+      }
       await fileRef.delete();
-      // Subtrai bytes do contador ao remover durante edição
-      if (foto.size > 0) await atualizarStorageUsado(-foto.size);
+      if (bytes > 0) await atualizarStorageUsado(-bytes);
     } catch (err) {
-      console.warn('Falha ao deletar foto do Storage ao remover do form:', err.code, foto.url);
+      console.warn('Falha ao deletar arquivo do Storage:', err.code, foto.url);
+    }
+
+    // Persiste a lista atualizada no Firestore imediatamente
+    const propIdx = parseInt(document.getElementById("prop-id")?.value ?? "-1");
+    if (propIdx >= 0 && propriedades[propIdx]) {
+      const docId = propriedades[propIdx]._firestoreId || propriedades[propIdx].id;
+      try {
+        await db.collection("propriedades").doc(docId).update({ fotos: fotosTemp });
+      } catch (err) {
+        console.error("Erro ao atualizar fotos no Firestore:", err);
+      }
     }
   }
 }
@@ -3109,14 +3407,16 @@ function confirmarRemoverProp(idx) {
 
         if (url && typeof url === 'string' && url.startsWith('https://firebasestorage')) {
           try {
-            // Extrai a referência a partir da URL pública do Firebase Storage
             const fileRef = storage.refFromURL(url);
+            let bytes = size;
+            if (!bytes) {
+              try { const meta = await fileRef.getMetadata(); bytes = meta.size || 0; } catch (_) {}
+            }
             await fileRef.delete();
-            bytesLiberados += size;
+            bytesLiberados += bytes;
           } catch (storageErr) {
-            // Arquivo pode já ter sido deletado ou URL inválida — ignora
             console.warn('Falha ao deletar arquivo do Storage:', storageErr.code, url);
-            bytesLiberados += size; // subtrai do contador mesmo assim (arquivo não existe mais)
+            bytesLiberados += size;
           }
         } else if (size > 0) {
           // URL não é do Firebase Storage (ex: formato antigo) — só subtrai o contador
@@ -3199,14 +3499,7 @@ function abrirModalDisparoDirect(idx) {
   document.querySelectorAll(".sug-btn").forEach(b => b.classList.remove("active"));
 
   const lista = document.getElementById("disparo-lista");
-  lista.innerHTML = todosOsDados.map((c, i) => `
-    <label class="disparo-item">
-      <input type="checkbox" class="disparo-check" value="${i}" onchange="atualizarContadorDisparo()" checked />
-      <div class="disparo-item-info">
-        <div class="disparo-item-nome">${c.nome}</div>
-        <div class="disparo-item-sub">Apto ${c.apartamento} · ${c.telefone}${c.condominio ? ' · ' + c.condominio : ''}</div>
-      </div>
-    </label>`).join('');
+  lista.innerHTML = todosOsDados.map((c, i) => renderDisparoItem(c, i)).join('');
 
   atualizarContadorDisparo();
   // Limpa busca anterior ao abrir o modal
@@ -3288,8 +3581,16 @@ function renderizarPreviewMidias() {
 }
 
 function selecionarTodosClientes(sel) {
-  // Seleciona/deseleciona apenas os itens VISÍVEIS (não filtrados)
-  document.querySelectorAll(".disparo-item").forEach(item => {
+  // Limpa filtro de tipo ao clicar em Todos
+  if (sel) {
+    _disparoFiltroTipo = null;
+    ["proprietario", "locatario", "outro"].forEach(t => {
+      const b = document.getElementById("filtrotype-" + t);
+      if (b) b.classList.remove("btn-active-tipo");
+    });
+    document.querySelectorAll("#disparo-lista .disparo-item").forEach(item => item.style.display = "");
+  }
+  document.querySelectorAll("#disparo-lista .disparo-item").forEach(item => {
     if (item.style.display !== "none") {
       const cb = item.querySelector(".disparo-check");
       if (cb) cb.checked = sel;
@@ -3300,22 +3601,235 @@ function selecionarTodosClientes(sel) {
 
 function filtrarDestinatarios() {
   const termo = (document.getElementById("disparo-busca")?.value || "").toLowerCase().trim();
-  const itens = document.querySelectorAll(".disparo-item");
-
-  itens.forEach(item => {
-    if (!termo) {
-      item.style.display = "";
-      return;
-    }
+  document.querySelectorAll("#disparo-lista .disparo-item").forEach(item => {
+    const cb = item.querySelector(".disparo-check");
+    const idx = cb ? parseInt(cb.value) : -1;
+    const c = todosOsDados[idx];
+    const tipoOk = !_disparoFiltroTipo || (c && (c.tipo || "proprietario") === _disparoFiltroTipo);
+    if (!termo) { item.style.display = tipoOk ? "" : "none"; return; }
     const nome = (item.querySelector(".disparo-item-nome")?.textContent || "").toLowerCase();
-    const sub = (item.querySelector(".disparo-item-sub")?.textContent || "").toLowerCase();
-    const match = nome.includes(termo) || sub.includes(termo);
-    item.style.display = match ? "" : "none";
+    const sub  = (item.querySelector(".disparo-item-sub")?.textContent  || "").toLowerCase();
+    item.style.display = (tipoOk && (nome.includes(termo) || sub.includes(termo))) ? "" : "none";
   });
 }
 
+// =============================================
+//  NÚMEROS DE TESTE
+// =============================================
+
+function getNumerosTesteStorage() {
+  try { return JSON.parse(localStorage.getItem("numeros_teste") || "[]"); } catch { return []; }
+}
+function saveNumerosTesteStorage(lista) {
+  localStorage.setItem("numeros_teste", JSON.stringify(lista));
+}
+
+function abrirModalNumerosTeste() {
+  renderListaNumerosTeste();
+  document.getElementById("modalNumerosTeste").style.display = "flex";
+}
+function fecharModalNumerosTeste() {
+  document.getElementById("modalNumerosTeste").style.display = "none";
+}
+
+function renderListaNumerosTeste() {
+  const lista = getNumerosTesteStorage();
+  const el = document.getElementById("nt-lista");
+  if (lista.length === 0) {
+    el.innerHTML = `<div class="sem-resultados" style="display:flex;padding:20px"><p>Nenhum número cadastrado.</p></div>`;
+    return;
+  }
+  el.innerHTML = lista.map((n, i) => `
+    <div class="numteste-item">
+      <div class="numteste-item-info">
+        <div class="numteste-item-nome">${_esc(n.nome || n.telefone)}</div>
+        <div class="numteste-item-tel">${_esc(n.telefone)}</div>
+      </div>
+      <div class="numteste-limite">
+        Envios:
+        <input type="number" min="1" value="${n.limite}" onchange="atualizarLimiteTeste(${i}, this.value)" />
+      </div>
+      <button class="btn-icon btn-icon-del" title="Remover" onclick="removerNumeroTeste(${i})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        </svg>
+      </button>
+    </div>`).join('');
+}
+
+function adicionarNumeroTeste() {
+  const nome = document.getElementById("nt-nome").value.trim();
+  const tel  = document.getElementById("nt-tel").value.trim().replace(/\D/g, "");
+  const limite = parseInt(document.getElementById("nt-limite").value) || 1;
+  if (!tel) { mostrarToast("Informe o telefone.", "err"); return; }
+  const lista = getNumerosTesteStorage();
+  if (lista.find(n => n.telefone === tel)) { mostrarToast("Número já cadastrado.", "err"); return; }
+  lista.push({ nome, telefone: tel, limite });
+  saveNumerosTesteStorage(lista);
+  document.getElementById("nt-nome").value = "";
+  document.getElementById("nt-tel").value = "";
+  document.getElementById("nt-limite").value = "3";
+  renderListaNumerosTeste();
+}
+
+function removerNumeroTeste(idx) {
+  const lista = getNumerosTesteStorage();
+  lista.splice(idx, 1);
+  saveNumerosTesteStorage(lista);
+  renderListaNumerosTeste();
+}
+
+function atualizarLimiteTeste(idx, valor) {
+  const lista = getNumerosTesteStorage();
+  if (lista[idx]) { lista[idx].limite = Math.max(1, parseInt(valor) || 1); }
+  saveNumerosTesteStorage(lista);
+}
+
+function usarNumerosTeste() {
+  fecharModalNumerosTeste();
+  carregarNumerosTeste();
+}
+
+function removerNumeroTesteDisparo(idx, btn) {
+  removerNumeroTeste(idx);
+  const item = btn.closest(".disparo-item");
+  if (item) item.remove();
+  atualizarContadorDisparo();
+}
+
+function editarNumeroTesteDisparo(idx, btn) {
+  const item = btn.closest(".disparo-item");
+  const testes = getNumerosTesteStorage();
+  const t = testes[idx];
+  if (!t) return;
+
+  item.innerHTML = `
+    <div class="nt-inline-edit">
+      <input class="nt-inline-nome" type="text" value="${_esc(t.nome)}" placeholder="Nome" />
+      <input class="nt-inline-tel" type="text" value="${_esc(formatarTelefone(t.telefone))}" placeholder="(81) 99999-9999" maxlength="15" oninput="this.value=formatarTelefone(this.value)" />
+      <input class="nt-inline-limite" type="number" min="1" value="${t.limite}" title="Limite de envios" />
+      <button type="button" class="btn btn-primary btn-sm" onclick="salvarNumeroTesteDisparo(${idx}, this)">Salvar</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="carregarNumerosTeste()">Cancelar</button>
+    </div>`;
+}
+
+function salvarNumeroTesteDisparo(idx, btn) {
+  const item = btn.closest(".disparo-item");
+  const nome   = item.querySelector(".nt-inline-nome").value.trim();
+  const tel    = item.querySelector(".nt-inline-tel").value.replace(/\D/g, "");
+  const limite = Math.max(1, parseInt(item.querySelector(".nt-inline-limite").value) || 1);
+  if (!tel) { mostrarToast("Informe o telefone.", "err"); return; }
+  const lista = getNumerosTesteStorage();
+  lista[idx] = { nome, telefone: tel, limite };
+  saveNumerosTesteStorage(lista);
+  carregarNumerosTeste();
+}
+
+function carregarNumerosTeste() {
+  const btn = document.getElementById("filtrotype-teste");
+  const lista = document.getElementById("disparo-lista");
+  const testes = getNumerosTesteStorage();
+
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("filtrotype-" + t);
+    if (b) b.classList.remove("btn-active-tipo");
+  });
+  if (btn) btn.classList.add("btn-active-tipo");
+
+  if (testes.length === 0) {
+    lista.innerHTML = `<div class="sem-resultados" style="display:flex;padding:24px"><p>Nenhum número de teste. <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="abrirModalNumerosTeste()">Gerenciar</button></p></div>`;
+    atualizarContadorDisparo();
+    return;
+  }
+
+  lista.innerHTML = testes.map((t, i) => `
+    <label class="disparo-item">
+      <input type="checkbox" class="disparo-check" value="teste:${i}" onchange="atualizarContadorDisparo()" checked
+        data-nome="${_esc(t.nome || t.telefone)}" data-telefone="${_esc(t.telefone)}" />
+      <div class="disparo-item-info">
+        <div class="disparo-item-nome">
+          ${_esc(t.nome || t.telefone)}
+          <span class="di-badge" style="background:#fef9c3;color:#92400e;">Teste</span>
+          <span class="di-badge" style="background:#f1f5f9;color:#64748b;">Envios: ${t.limite}</span>
+        </div>
+        <div class="disparo-item-sub">${_esc(t.telefone)}</div>
+      </div>
+      <button type="button" class="btn-icon btn-icon-edit" title="Editar" onclick="editarNumeroTesteDisparo(${i}, this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button type="button" class="btn-icon btn-icon-del" title="Remover" onclick="removerNumeroTesteDisparo(${i}, this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+    </label>`).join('');
+
+  mensagemTipoAtivo = null;
+  _disparoFiltroTipo = null;
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("filtrotype-" + t);
+    if (b) b.classList.remove("btn-active-tipo");
+  });
+  atualizarContadorDisparo();
+}
+
+function abrirConfirmEnvio(selecionados, onConfirm) {
+  const total = selecionados.length;
+  document.getElementById("confirm-envio-total").textContent =
+    `${total} destinatário${total !== 1 ? 's' : ''}`;
+
+  const lista = document.getElementById("confirm-envio-lista");
+  lista.innerHTML = selecionados.map(c => {
+    const tipo = c.tipo || "proprietario";
+    const tipoClass = { proprietario: "di-badge-prop", locatario: "di-badge-loc", outro: "di-badge-outro", teste: "" }[tipo] || "";
+    const tipoLabel = { proprietario: "Proprietário", locatario: "Locatário", outro: "Outro", teste: "Teste" }[tipo] || tipo;
+    const badgeStyle = tipo === "teste" ? 'style="background:#fef9c3;color:#92400e;"' : "";
+    return `<li class="confirm-envio-item">
+      <span class="di-badge ${tipoClass}" ${badgeStyle}>${tipoLabel}</span>
+      <span class="confirm-envio-item-nome">${_esc(c.nome)}</span>
+      <span class="confirm-envio-item-tel">${_esc(c.telefone)}</span>
+    </li>`;
+  }).join('');
+
+  const btn = document.getElementById("confirm-envio-btn");
+  btn.onclick = () => { fecharConfirmEnvio(); onConfirm(); };
+
+  document.getElementById("modalConfirmEnvio").style.display = "flex";
+}
+
+function fecharConfirmEnvio() {
+  document.getElementById("modalConfirmEnvio").style.display = "none";
+}
+
+let _disparoFiltroTipo = null;
+
+function filtrarDestinatariosPorTipo(tipo) {
+  // Toggle: clicar no mesmo tipo ativo limpa o filtro
+  _disparoFiltroTipo = _disparoFiltroTipo === tipo ? null : tipo;
+
+  ["proprietario", "locatario", "outro"].forEach(t => {
+    const b = document.getElementById("filtrotype-" + t);
+    if (b) b.classList.toggle("btn-active-tipo", t === _disparoFiltroTipo);
+  });
+
+  _aplicarFiltroTipoDisparo();
+}
+
+function _aplicarFiltroTipoDisparo() {
+  document.querySelectorAll("#disparo-lista .disparo-item").forEach(item => {
+    if (!_disparoFiltroTipo) { item.style.display = ""; return; }
+    const cb = item.querySelector(".disparo-check");
+    if (!cb) return;
+    const idx = parseInt(cb.value);
+    const c = todosOsDados[idx];
+    item.style.display = (c && (c.tipo || "proprietario") === _disparoFiltroTipo) ? "" : "none";
+  });
+  atualizarContadorDisparo();
+}
+
 function atualizarContadorDisparo() {
-  const total = document.querySelectorAll(".disparo-check:checked").length;
+  const total = [...document.querySelectorAll("#disparo-lista .disparo-item")]
+    .filter(item => item.style.display !== "none")
+    .filter(item => item.querySelector(".disparo-check")?.checked).length;
   const el = document.getElementById("disparo-counter");
   if (el) el.innerHTML = `<strong>${total}</strong> cliente${total !== 1 ? 's' : ''} selecionado${total !== 1 ? 's' : ''}`;
 }
@@ -3425,16 +3939,39 @@ async function montarColagem(fotos) {
 }
 
 async function dispararPropriedade() {
-  const selecionados = [...document.querySelectorAll(".disparo-check:checked")]
-    .map(cb => todosOsDados[parseInt(cb.value)])
-    .filter(Boolean);
-  const mensagem = document.getElementById("disparo-mensagem").value;
+  const testesSalvos = getNumerosTesteStorage();
+  const selecionados = [...document.querySelectorAll("#disparo-lista .disparo-item")]
+    .filter(item => item.style.display !== "none")
+    .flatMap(item => {
+      const cb = item.querySelector(".disparo-check");
+      if (!cb?.checked) return [];
+      if (cb.value.startsWith("teste:")) {
+        const idx = parseInt(cb.value.split(":")[1]);
+        const t = testesSalvos[idx];
+        if (!t) return [];
+        const limite = Math.max(1, t.limite || 1);
+        return Array.from({ length: limite }, () => ({
+          nome: t.nome || t.telefone,
+          telefone: t.telefone,
+          tipo: "teste"
+        }));
+      }
+      return [todosOsDados[parseInt(cb.value)]].filter(Boolean);
+    });
 
+  if (selecionados.length === 0) {
+    mostrarToast("Nenhum destinatário selecionado.", "err");
+    return;
+  }
+
+  const mensagem = document.getElementById("disparo-mensagem").value;
   const propIdx = propIndexDisparo;
   const msgTipo = mensagemTipoAtivo;
-  const fotos = [...disparoMidias]; // captura ANTES de fecharModalDisparo limpar o array
+  const fotos = [...disparoMidias];
 
-  fecharModalDisparo();
+  // Mostra modal de confirmação
+  abrirConfirmEnvio(selecionados, async () => {
+    fecharModalDisparo();
 
   let titulo;
 
@@ -3482,6 +4019,7 @@ async function dispararPropriedade() {
       `⚠️ ${msg}\n\nOu envie manualmente clicando nos links abaixo:`,
       links);
   }
+  }); // fim callback confirmEnvio
 }
 
 // ==============================================

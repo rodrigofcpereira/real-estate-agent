@@ -152,7 +152,9 @@
     }
     .lcard-img img {
       width: 100%; height: 100%;
-      object-fit: cover; display: block;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
     }
     .lcard-img-empty {
       width: 100%; height: 100%;
@@ -237,8 +239,10 @@
     .carousel-slide img {
       width: 100%; height: 100%;
       object-fit: cover;
+      object-position: top center;
       display: block;
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: zoom-in;
     }
     .carousel-slide-video {
       width: 100%; height: 100%;
@@ -248,7 +252,9 @@
     }
     .lcard-img-video {
       width: 100%; height: 100%;
-      object-fit: cover; display: block;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
     }
     .lcard-play-icon {
       position: absolute; inset: 0;
@@ -336,11 +342,127 @@
     }
     .prop-desc { font-size: .89rem; color: #334155; line-height: 1.65; white-space: pre-wrap; }
 
+    /* ── Lightbox ───────────────────────────────────────────────────── */
+    #lightbox {
+      display: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,.95);
+      flex-direction: column;
+      touch-action: none;
+    }
+    #lightbox.open { display: flex; }
+    #lb-img-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; min-height: 0;
+    }
+    #lightbox img {
+      max-width: 100%; max-height: 100%;
+      object-fit: contain;
+      transform-origin: center center;
+      transition: transform .15s ease;
+      user-select: none; pointer-events: none;
+      display: block;
+    }
+    #lb-toolbar {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 12px 16px;
+      background: rgba(0,0,0,.5);
+      position: relative;
+    }
+    .lb-close {
+      position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,.15); border: none;
+      color: #fff; font-size: 1.2rem; width: 38px; height: 38px;
+      border-radius: 50%; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .lb-zoom-btn {
+      background: rgba(255,255,255,.2); border: none; color: #fff;
+      font-size: 1.3rem; width: 48px; height: 48px; border-radius: 50%;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .lb-zoom-btn:hover, .lb-zoom-btn:active { background: rgba(255,255,255,.4); }
+    .lb-zoom-label {
+      background: rgba(255,255,255,.15); color: #fff;
+      font-size: .85rem; font-weight: 700; padding: 0 18px;
+      border-radius: 20px; height: 48px;
+      display: flex; align-items: center; min-width: 70px; justify-content: center;
+    }
+    .lb-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,.18); border: none; color: #fff;
+      font-size: 2rem; width: 48px; height: 64px;
+      border-radius: 8px; cursor: pointer; z-index: 3;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s; backdrop-filter: blur(4px);
+    }
+    .lb-nav:hover { background: rgba(255,255,255,.35); }
+    .lb-nav:disabled { opacity: .2; pointer-events: none; }
+    .lb-nav-prev { left: 8px; }
+    .lb-nav-next { right: 8px; }
+
     .page-footer {
       text-align: center; padding: 28px 20px 20px;
       color: #94a3b8; font-size: .76rem;
     }
     .page-footer strong { color: #64748b; }
+
+    /* PDF slide no carrossel */
+    .carousel-slide-pdf {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; background: #1e293b;
+      color: #e2e8f0; text-decoration: none;
+      transition: background .15s;
+    }
+    .carousel-slide-pdf:hover { background: #0f172a; }
+    .carousel-slide-pdf span { font-size: .8rem; font-weight: 600; color: #94a3b8; }
+
+    /* Banner de PDFs — acima do carrossel */
+    .pdf-banner {
+      background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+      padding: 14px 20px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .pdf-banner-titulo {
+      font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: rgba(255,255,255,.7);
+    }
+    .pdf-banner-lista { display: flex; flex-direction: column; gap: 8px; }
+    .pdf-banner-item {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px; padding: 12px 14px;
+      text-decoration: none; color: #fff;
+      transition: background .15s;
+    }
+    .pdf-banner-item:hover { background: rgba(255,255,255,.22); }
+    .pdf-banner-icon {
+      width: 40px; height: 40px; flex-shrink: 0;
+      background: rgba(255,255,255,.15); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pdf-banner-info { flex: 1; min-width: 0; }
+    .pdf-banner-nome {
+      font-size: .88rem; font-weight: 700;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pdf-banner-sub { font-size: .72rem; color: rgba(255,255,255,.65); margin-top: 2px; }
+    .pdf-banner-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: #fff; color: #1d4ed8;
+      font-size: .78rem; font-weight: 700;
+      padding: 8px 14px; border-radius: 8px;
+      white-space: nowrap; flex-shrink: 0;
+      transition: background .15s;
+    }
+    .pdf-banner-item:hover .pdf-banner-btn { background: #eff6ff; }
   </style>
 </head>
 <body>
@@ -386,6 +508,7 @@
     <a class="detail-back" onclick="voltarLista()">
       ← Voltar ao catálogo
     </a>
+    <div id="pdfBanner" style="display:none"></div>
     <div class="carousel-wrap">
       <div class="carousel" id="carousel">
         <div class="carousel-track" id="carTrack"></div>
@@ -414,6 +537,22 @@
     <div class="page-footer"><strong>LF Imóveis</strong> · Imóveis © 2026</div>
   </div>
 
+  <!-- Lightbox -->
+  <div id="lightbox">
+    <div id="lb-img-wrap">
+      <button class="lb-nav lb-nav-prev" id="lbPrev" onclick="lbNavegar(-1)">‹</button>
+      <img id="lbImg" src="" alt="" />
+      <button class="lb-nav lb-nav-next" id="lbNext" onclick="lbNavegar(1)">›</button>
+    </div>
+    <div id="lb-toolbar">
+      <button class="lb-zoom-btn" onclick="lbZoom(-0.25)" title="Diminuir zoom">−</button>
+      <span class="lb-zoom-label" id="lbLabel">100%</span>
+      <button class="lb-zoom-btn" onclick="lbZoom(+0.25)" title="Aumentar zoom">+</button>
+      <span class="lb-zoom-label" id="lbCounter" style="min-width:50px"></span>
+      <button class="lb-close" onclick="lbFechar()">✕</button>
+    </div>
+  </div>
+
   <script>
     firebase.initializeApp({
       apiKey:            "AIzaSyC27bu69OUt7p9iqRS-XIsuLWXJoU9JUCw",
@@ -437,6 +576,62 @@
       }
       if (typeof f === 'string') return /\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(f);
       return false;
+    }
+    function ehPdf(f) {
+      if (typeof f === 'object' && f !== null) {
+        if (f.type && f.type.includes('pdf')) return true;
+        const u = f.url || '';
+        return u.startsWith('data:application/pdf')
+          || /\.pdf(\?|%3F|$)/i.test(u)
+          || u.includes('%2Fpdf_')
+          || u.includes('/pdf_');
+      }
+      if (typeof f === 'string') {
+        return f.startsWith('data:application/pdf')
+          || /\.pdf(\?|%3F|$)/i.test(f)
+          || f.includes('%2Fpdf_')
+          || f.includes('/pdf_');
+      }
+      return false;
+    }
+    function ehImagem(f) {
+      if (typeof f === 'object' && f !== null) {
+        if (f.type && f.type.startsWith('image/')) return true;
+        const u = f.url || '';
+        return u.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(u);
+      }
+      if (typeof f === 'string') return f.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(f);
+      return false;
+    }
+    function ehDoc(f) {
+      // Qualquer arquivo que não é imagem nem vídeo nem PDF
+      return !ehImagem(f) && !ehVideo(f) && !ehPdf(f) && urlFoto(f);
+    }
+    function iconeDoc(f) {
+      const tipo = typeof f === 'object' ? (f.type || '') : '';
+      const nome = typeof f === 'object' ? (f.name || '') : (f || '');
+      if (tipo.includes('spreadsheet') || /\.xlsx?$/i.test(nome)) return '📊';
+      if (tipo.includes('word') || /\.docx?$/i.test(nome)) return '📝';
+      if (tipo.includes('presentation') || /\.pptx?$/i.test(nome)) return '📋';
+      return '📎';
+    }
+    function nomeArquivo(f) {
+      if (typeof f === 'object' && f !== null && f.name) return f.name;
+      const u = typeof f === 'object' ? (f.url || '') : (f || '');
+      try {
+        // Firebase Storage URL: .../o/fotos%2Fuid%2Farquivo.pdf?alt=media
+        // O path completo fica num único segmento após /o/ com %2F codificado
+        const semQuery = u.split('?')[0];
+        const match    = semQuery.match(/\/o\/(.+)$/);
+        const pathBruto = match ? match[1] : semQuery.split('/').pop();
+        const decoded  = decodeURIComponent(pathBruto);
+        // decoded = "fotos/uid/arquivo.pdf" — pega só o nome após a última /
+        const nome = decoded.split('/').pop();
+        if (!nome || /^(pdf|doc|foto|video)_\d+_[a-z0-9]+\./i.test(nome)) return 'documento';
+        return nome;
+      } catch (_) {
+        return 'documento.pdf';
+      }
     }
     function formatPreco(v) {
       if (!v) return '';
@@ -611,8 +806,42 @@
 
       const fotosRaw = Array.isArray(prop.fotos) && prop.fotos.length
         ? prop.fotos : (prop.foto ? [prop.foto] : []);
-      // Passa os objetos raw para buildCarousel poder detectar vídeos pelo campo `type`
-      buildCarousel(fotosRaw.filter(f => urlFoto(f)));
+      const arquivos = fotosRaw.filter(f => urlFoto(f));
+
+      // Carrossel: apenas imagens e vídeos
+      buildCarousel(arquivos.filter(f => ehImagem(f) || ehVideo(f)));
+
+      // Banner: PDFs e outros documentos
+      const docs = arquivos.filter(f => ehPdf(f) || ehDoc(f));
+      const banner = document.getElementById('pdfBanner');
+      if (docs.length > 0) {
+        banner.style.display = 'block';
+        banner.innerHTML = `<div class="pdf-banner">
+          <div class="pdf-banner-titulo">📄 Documento${docs.length > 1 ? 's' : ''} disponíve${docs.length > 1 ? 'is' : 'l'}</div>
+          <div class="pdf-banner-lista">
+            ${docs.map(f => {
+              const url  = urlFoto(f);
+              const nome = nomeArquivo(f);
+              const icone = ehPdf(f) ? '📄' : iconeDoc(f);
+              return `
+              <a class="pdf-banner-item" href="${url}" target="_blank">
+                <div class="pdf-banner-icon" style="font-size:1.4rem">${icone}</div>
+                <div class="pdf-banner-info">
+                  <div class="pdf-banner-nome">${nome}</div>
+                  <div class="pdf-banner-sub">${ehPdf(f) ? 'Toque para visualizar' : 'Toque para baixar'}</div>
+                </div>
+                <div class="pdf-banner-btn">
+                  ${ehPdf(f)
+                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Visualizar`
+                    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Baixar`}
+                </div>
+              </a>`;
+            }).join('')}
+          </div>
+        </div>`;
+      } else {
+        banner.style.display = 'none';
+      }
 
       document.getElementById('loading').style.display = 'none';
       document.getElementById('content').style.display = 'block';
@@ -639,9 +868,17 @@
 
       track.innerHTML = fotos.map((f, i) => {
         const src = urlFoto(f);
-        const media = ehVideo(f)
-          ? `<video src="${src}" class="carousel-slide-video" controls playsinline preload="metadata"></video>`
-          : `<img src="${src}" alt="Foto ${i+1}" loading="${i===0?'eager':'lazy'}">`;
+        let media;
+        if (ehVideo(f)) {
+          media = `<video src="${src}" class="carousel-slide-video" controls playsinline preload="metadata"></video>`;
+        } else if (ehPdf(f)) {
+          media = `<a href="${src}" target="_blank" class="carousel-slide-pdf">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+            <span>Toque para abrir o PDF</span>
+          </a>`;
+        } else {
+          media = `<img src="${src}" alt="Foto ${i+1}" loading="${i===0?'eager':'lazy'}" onclick="lbAbrir(this.src)" style="cursor:zoom-in">`;
+        }
         return `<div class="carousel-slide">${media}</div>`;
       }).join('');
 
@@ -672,11 +909,112 @@
     }
 
     document.addEventListener('keydown', e => {
+      if (document.getElementById('lightbox').classList.contains('open')) {
+        if (e.key === 'Escape')                  lbFechar();
+        if (e.key === '+' || e.key === '=')      lbZoom(+0.25);
+        if (e.key === '-')                       lbZoom(-0.25);
+        if (e.key === 'ArrowRight')              lbNavegar(1);
+        if (e.key === 'ArrowLeft')               lbNavegar(-1);
+        return;
+      }
       if (document.getElementById('content').style.display !== 'none') {
         if (e.key === 'ArrowRight') carMover(1);
         if (e.key === 'ArrowLeft')  carMover(-1);
       }
     });
+
+    // =====================================================================
+    //  LIGHTBOX com zoom e navegação
+    // =====================================================================
+    let _lbScale = 1, _lbFotos = [], _lbIdx = 0;
+
+    function lbAbrir(src) {
+      // Coleta todas as imagens do carrossel na ordem
+      _lbFotos = [...document.querySelectorAll('.carousel-slide img')].map(i => i.src);
+      _lbIdx   = _lbFotos.indexOf(src);
+      if (_lbIdx < 0) { _lbFotos = [src]; _lbIdx = 0; }
+      _lbMostrar();
+      document.getElementById('lightbox').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      lbInitGestos();
+    }
+
+    function _lbMostrar() {
+      const img = document.getElementById('lbImg');
+      _lbScale = 1;
+      img.src = _lbFotos[_lbIdx];
+      img.style.transform = 'scale(1)';
+      document.getElementById('lbLabel').textContent = '100%';
+      document.getElementById('lbCounter').textContent = _lbFotos.length > 1 ? `${_lbIdx + 1} / ${_lbFotos.length}` : '';
+      document.getElementById('lbPrev').disabled = _lbIdx === 0;
+      document.getElementById('lbNext').disabled = _lbIdx === _lbFotos.length - 1;
+    }
+
+    function lbNavegar(dir) {
+      _lbIdx = Math.max(0, Math.min(_lbFotos.length - 1, _lbIdx + dir));
+      _lbMostrar();
+    }
+
+    function lbFechar() {
+      document.getElementById('lightbox').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    function lbZoom(delta) {
+      _lbScale = Math.min(5, Math.max(0.5, _lbScale + delta));
+      document.getElementById('lbImg').style.transform = `scale(${_lbScale})`;
+      document.getElementById('lbLabel').textContent = Math.round(_lbScale * 100) + '%';
+    }
+
+    function lbInitGestos() {
+      const wrap = document.getElementById('lb-img-wrap');
+
+      // Scroll do mouse → zoom
+      wrap.onwheel = e => {
+        e.preventDefault();
+        lbZoom(e.deltaY < 0 ? +0.15 : -0.15);
+      };
+
+      // Touch: pinça → zoom, swipe 1 dedo → navegar
+      let _t0 = null, _s0 = 1, _sx = 0, _isDrag = false;
+      wrap.ontouchstart = e => {
+        if (e.touches.length === 2) {
+          _t0 = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          _s0 = _lbScale;
+        } else if (e.touches.length === 1) {
+          _sx = e.touches[0].clientX;
+          _isDrag = false;
+        }
+      };
+      wrap.ontouchmove = e => {
+        if (e.touches.length === 2 && _t0) {
+          e.preventDefault();
+          const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          _lbScale = Math.min(5, Math.max(0.5, _s0 * (dist / _t0)));
+          document.getElementById('lbImg').style.transform = `scale(${_lbScale})`;
+          document.getElementById('lbLabel').textContent = Math.round(_lbScale * 100) + '%';
+        } else if (e.touches.length === 1) {
+          if (Math.abs(e.touches[0].clientX - _sx) > 10) _isDrag = true;
+        }
+      };
+      wrap.ontouchend = e => {
+        _t0 = null;
+        if (_isDrag && e.changedTouches.length === 1 && _lbScale <= 1) {
+          const dx = _sx - e.changedTouches[0].clientX;
+          if (Math.abs(dx) > 40) lbNavegar(dx > 0 ? 1 : -1);
+        }
+        _isDrag = false;
+      };
+
+      // Clique no fundo → fechar
+      wrap.onclick = e => { if (e.target === wrap) lbFechar(); };
+    }
   </script>
 </body>
 </html>
