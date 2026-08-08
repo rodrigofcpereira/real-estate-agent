@@ -616,22 +616,25 @@
       return '📎';
     }
     function nomeArquivo(f) {
-      if (typeof f === 'object' && f !== null && f.name) return f.name;
-      const u = typeof f === 'object' ? (f.url || '') : (f || '');
-      try {
-        // Firebase Storage URL: .../o/fotos%2Fuid%2Farquivo.pdf?alt=media
-        // O path completo fica num único segmento após /o/ com %2F codificado
-        const semQuery = u.split('?')[0];
-        const match    = semQuery.match(/\/o\/(.+)$/);
-        const pathBruto = match ? match[1] : semQuery.split('/').pop();
-        const decoded  = decodeURIComponent(pathBruto);
-        // decoded = "fotos/uid/arquivo.pdf" — pega só o nome após a última /
-        const nome = decoded.split('/').pop();
-        if (!nome || /^(pdf|doc|foto|video)_\d+_[a-z0-9]+\./i.test(nome)) return 'documento';
-        return nome;
-      } catch (_) {
-        return 'documento.pdf';
+      let n = typeof f === 'object' && f !== null ? (f.name || '') : '';
+      const u = typeof f === 'object' && f !== null ? (f.url || '') : (f || '');
+      // Se parece path codificado ou path completo, extrai só o filename
+      if (n.includes('%2F') || n.includes('/')) {
+        try { n = decodeURIComponent(n).split('/').pop(); } catch(_) { n = n.split('/').pop(); }
       }
+      // Se vazio, extrai da URL do Firebase Storage
+      if (!n && u.startsWith('https://')) {
+        try {
+          const semQuery = u.split('?')[0];
+          const match = semQuery.match(/\/o\/(.+)$/);
+          const pathBruto = match ? match[1] : semQuery.split('/').pop();
+          n = decodeURIComponent(pathBruto).split('/').pop();
+        } catch(_) {}
+      }
+      // Remove prefixo de timestamp e prefixos técnicos
+      n = (n || '').replace(/^\d{10,}_/, '');
+      if (!n || /^(pdf|doc|foto|video)_\d+_[a-z0-9]+\./i.test(n)) return 'documento';
+      return n;
     }
     function formatPreco(v) {
       if (!v) return '';

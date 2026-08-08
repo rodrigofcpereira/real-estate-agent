@@ -88,6 +88,60 @@ function logFile(msg) {
   try { fs.appendFileSync(LOG_FILE, line); } catch(_) {}
 }
 
+// ---- Lock de instância única do servidor ----
+// Evita que dois processos server.js rodem ao mesmo tempo (ex: nodemon +
+// execução manual em paralelo, ou um reinício do Electron enquanto o
+// processo antigo ainda não tinha terminado). Dois processos concorrentes
+// disputam o mesmo userDataDir do Chrome/WhatsApp — cada um destrói/recria a
+// sessão do outro — e é isso que causava o loop de "sessão corrompida"/
+// timeout ao conectar. Estratégia: ao iniciar, se já existir outro processo
+// vivo dono do lock, ele é finalizado e o processo ATUAL (o mais recente)
+// assume o lock e continua normalmente.
+const SERVER_LOCK_FILE = path.join(path.dirname(LOG_FILE), "server.lock");
+
+function _pidVivo(pid) {
+  if (!pid || Number.isNaN(pid) || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0); // sinal 0 = só verifica existência, não mata
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function garantirInstanciaUnica() {
+  try {
+    if (fs.existsSync(SERVER_LOCK_FILE)) {
+      const pidAntigo = parseInt(fs.readFileSync(SERVER_LOCK_FILE, "utf8").trim(), 10);
+      if (_pidVivo(pidAntigo)) {
+        logFile(`⚠️  Processo servidor duplicado detectado (PID ${pidAntigo}) — finalizando o antigo para manter apenas o mais recente (PID ${process.pid}).`);
+        try { process.kill(pidAntigo, "SIGTERM"); } catch (_) {}
+      }
+    }
+  } catch (err) {
+    logFile(`⚠️  Erro ao verificar lock de instância: ${err.message}`);
+  }
+  try {
+    fs.writeFileSync(SERVER_LOCK_FILE, String(process.pid));
+  } catch (err) {
+    logFile(`⚠️  Erro ao gravar lock de instância: ${err.message}`);
+  }
+}
+
+function liberarLockInstancia() {
+  try {
+    if (fs.existsSync(SERVER_LOCK_FILE)) {
+      const pidNoArquivo = parseInt(fs.readFileSync(SERVER_LOCK_FILE, "utf8").trim(), 10);
+      if (pidNoArquivo === process.pid) fs.unlinkSync(SERVER_LOCK_FILE);
+    }
+  } catch (_) {}
+}
+
+garantirInstanciaUnica();
+process.on("exit", liberarLockInstancia);
+process.on("SIGINT", () => { liberarLockInstancia(); process.exit(0); });
+process.on("SIGTERM", () => { liberarLockInstancia(); process.exit(0); });
+
 // ---- Telemetria de erros (diagnóstico remoto) ----
 // O backend Node não pode gravar direto no Firestore (não tem credencial de
 // usuário nem é seguro embutir uma chave admin no instalador). Em vez disso,
@@ -189,7 +243,9 @@ function limparLockChrome() {
 // passar de um limite seguro, dispara uma reconexão preventiva — trocando
 // "reagir ao crash" por "evitar o crash antes que ele aconteça".
 let _watchdogInterval = null;
-const MEMORIA_LIMITE_MB = 350; // acima disso, reconecta preventivamente
+let _memoriaAltaContagem = 0; // quantas checagens consecutivas acima do limite
+const MEMORIA_LIMITE_MB = 700;      // acima disso, considera candidato a reconexão
+const MEMORIA_CHECAGENS_CONSECUTIVAS = 3; // só reconecta após N checagens seguidas altas (evita picos passageiros)
 
 function obterMemoriaChromeMB(pid) {
   try {
@@ -232,29 +288,41 @@ function iniciarWatchdogMemoria() {
       if (memMB === null) return;
 
       if (memMB > MEMORIA_LIMITE_MB) {
-        logFile(`⚠️  Chrome usando ${memMB}MB de RAM (limite: ${MEMORIA_LIMITE_MB}MB) — reconectando preventivamente para evitar crash...`);
-        emitirDiagnostico("reconexao_preventiva_memoria", { memoriaMB: memMB, limiteMB: MEMORIA_LIMITE_MB });
-        pararWatchdogMemoria();
-
-        // Só reconecta se não houver um lote em andamento — evita interromper
-        // um envio ativo. Se houver, tenta de novo na próxima checagem.
-        const temLoteAtivo = Array.from(_batchJobs.values()).some(j => !j.cancelado);
-        if (temLoteAtivo) {
-          logFile(`ℹ️  Reconexão preventiva postergada — lote de envio em andamento.`);
-          iniciarWatchdogMemoria(); // reagenda para checar de novo em breve
-          return;
-        }
-
-        whatsappStatus = "conectando";
-        io.emit("wa:status", { status: "conectando", message: "Otimizando conexão (uso de memória alto)..." });
-        await destruirCliente();
-        iniciando = false;
-        setTimeout(() => iniciarWhatsApp(), 2000);
+        _memoriaAltaContagem++;
+        logFile(`ℹ️  Chrome usando ${memMB}MB de RAM (acima de ${MEMORIA_LIMITE_MB}MB) — checagem ${_memoriaAltaContagem}/${MEMORIA_CHECAGENS_CONSECUTIVAS}`);
+      } else {
+        _memoriaAltaContagem = 0; // memória normalizou, zera o contador
+        return;
       }
+
+      // Só reconecta depois de várias checagens seguidas altas — um pico
+      // isolado de memória é normal (ex: carregando várias mídias) e NÃO
+      // deve disparar reconexão, senão a conexão fica instável sem motivo.
+      if (_memoriaAltaContagem < MEMORIA_CHECAGENS_CONSECUTIVAS) return;
+
+      logFile(`⚠️  Chrome usando ${memMB}MB de RAM sustentado — reconectando preventivamente para evitar crash...`);
+      emitirDiagnostico("reconexao_preventiva_memoria", { memoriaMB: memMB, limiteMB: MEMORIA_LIMITE_MB });
+      _memoriaAltaContagem = 0;
+      pararWatchdogMemoria();
+
+      // Só reconecta se não houver um lote em andamento — evita interromper
+      // um envio ativo. Se houver, tenta de novo na próxima checagem.
+      const temLoteAtivo = Array.from(_batchJobs.values()).some(j => !j.cancelado);
+      if (temLoteAtivo) {
+        logFile(`ℹ️  Reconexão preventiva postergada — lote de envio em andamento.`);
+        iniciarWatchdogMemoria(); // reagenda para checar de novo em breve
+        return;
+      }
+
+      whatsappStatus = "conectando";
+      io.emit("wa:status", { status: "conectando", message: "Otimizando conexão (uso de memória alto)..." });
+      await destruirCliente();
+      iniciando = false;
+      setTimeout(() => iniciarWhatsApp(), 2000);
     } catch (err) {
       logFile(`⚠️  Erro no watchdog de memória: ${err.message}`);
     }
-  }, 60000); // checa a cada 60s — frequente o bastante sem sobrecarregar
+  }, 90000); // checa a cada 90s — com 3 checagens seguidas, só reconecta após ~4.5min de memória alta sustentada
 }
 
 // ---- Destruir cliente atual e aguardar o browser fechar ----
@@ -318,19 +386,6 @@ async function iniciarWhatsApp() {
         "--renderer-process-limit=1",                // só 1 renderer → economiza ~100MB RAM
         "--disk-cache-size=52428800",                // cache de disco máx 50MB (padrão ~320MB)
         "--js-flags=--max-old-space-size=192",       // heap V8 máx 192MB (1GB VPS tem 193MB livres)
-        // ── Redução adicional de memória (para máquinas Windows com pouca RAM) ──
-        "--disable-features=Translate,MediaRouter,OptimizationHints",
-        "--disable-component-extensions-with-background-pages",
-        "--disable-breakpad",                        // desativa relatório de crash interno do Chrome (economiza memória)
-        "--disable-crash-reporter",
-        "--disable-domain-reliability",
-        "--disable-print-preview",
-        "--disable-speech-api",
-        "--metrics-recording-only",
-        "--mute-audio",
-        "--no-pings",
-        "--password-store=basic",
-        "--use-mock-keychain",
         // Fallback extra: caso algum flag conflitante force uma janela visível,
         // posiciona-a fora da área da tela para o usuário nunca vê-la.
         "--window-position=-32000,-32000",
@@ -689,16 +744,14 @@ async function processarMedia(fotoInput, nomeArquivo = null) {
   if (fotoInput.startsWith('http')) {
     try {
       const media = await MessageMedia.fromUrl(fotoInput, { unsafeMime: true });
-      // Só sobrescreve o nome se o mimetype detectado NÃO corresponder à
-      // extensão do nome sugerido (evita forçar "imovel.jpg" em um PDF/xlsx
-      // que veio com mimetype correto detectado pelo MessageMedia.fromUrl).
+      // nomeArquivo aqui é sempre o nome ORIGINAL do arquivo (vindo do upload
+      // do usuário, ex: "OL_EUROFARMA_OTC.xlsx") — nunca mais um palpite
+      // genérico como "imovel.jpg". Por isso pode ser aplicado diretamente,
+      // sem comparação de extensão (que falhava para tipos como .xlsx/.docx,
+      // cujo mimetype não bate 1:1 com a extensão, ex:
+      // "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").
       if (media && nomeArquivo) {
-        const extSugerida = nomeArquivo.split('.').pop()?.toLowerCase();
-        const extReal = media.mimetype?.split('/')[1]?.replace('jpeg', 'jpg');
-        if (!extReal || extSugerida === extReal) {
-          media.filename = nomeArquivo;
-        }
-        // Senão, mantém o filename/mimetype que o fromUrl já detectou corretamente
+        media.filename = nomeArquivo;
       }
       return media;
     } catch(e) {
@@ -712,9 +765,20 @@ async function processarMedia(fotoInput, nomeArquivo = null) {
   if (!match) return null;
   const mimetype = match[1];
   if (!nomeArquivo) {
-    // ex: "image/jpeg" → "imovel.jpg", "video/mp4" → "imovel.mp4"
-    const ext = mimetype.split('/')[1]?.replace('jpeg', 'jpg') || 'bin';
-    nomeArquivo = `midia_${Date.now()}.${ext}`;
+    const mimeMap = {
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'text/plain': 'txt', 'text/csv': 'csv',
+    };
+    const ext = mimeMap[mimetype] || mimetype.split('/')[1]?.split(';')[0] || 'bin';
+    nomeArquivo = `arquivo.${ext}`;
   }
   return new MessageMedia(mimetype, match[2], nomeArquivo);
 }
@@ -755,7 +819,12 @@ app.post("/api/send", async (req, res) => {
   }
 
   // Pré-converte mídias (suporta data URL base64 e URL HTTPS – imagens e vídeos)
-  const mediasRaw = await Promise.all(midiasArray.map((m) => processarMedia(m, null)));
+  const mediasRaw = await Promise.all(midiasArray.map((m) => {
+    if (typeof m === 'object' && m !== null && (m.url || m.dataUrl)) {
+      return processarMedia(m.url || m.dataUrl, m.name || null);
+    }
+    return processarMedia(m, null);
+  }));
   const medias = mediasRaw.filter(Boolean);
 
   try {
@@ -991,12 +1060,15 @@ app.post("/api/send-batch", async (req, res) => {
   }
 
   // Pré-converte todas as mídias uma única vez (suporta data URL e HTTPS)
+  // Cada entrada pode ser string (URL/dataURL) ou { url, name }
   const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
-  // nomeArquivo = null → deixa o mimetype real (detectado do data URL ou da
-  // URL do Storage) decidir a extensão correta, em vez de forçar ".jpg"
-  // em qualquer tipo de arquivo (PDF, XLSX, DOCX, etc.)
   const mediasRaw = await Promise.all(
-    fotosArray.map((f) => processarMedia(f, null))
+    fotosArray.map((f) => {
+      if (typeof f === 'object' && f !== null) {
+        return processarMedia(f.url, f.name || null);
+      }
+      return processarMedia(f, null);
+    })
   );
   const medias = mediasRaw.filter(Boolean);
 

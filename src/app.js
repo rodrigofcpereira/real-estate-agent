@@ -1376,13 +1376,27 @@ function removerBannerDisparo() {
   if (banner) banner.remove();
 }
 
+// Normaliza qualquer lista de mídias para o formato { url, name } aceito pelo backend.
+// Suporta: string (dataURL/HTTPS), { dataUrl, name }, { url, name }, { url, type, name }
+function _normalizarFotos(fotos) {
+  return (Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []))
+    .map(f => {
+      if (!f) return null;
+      if (typeof f === 'string') return { url: f, name: '' };
+      const url  = f.url || f.dataUrl || '';
+      const name = _extrairNomeArquivo(f.name || '', url);
+      return { url, name };
+    })
+    .filter(f => f && f.url);
+}
+
 async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
   // Fecha qualquer modal aberto (disparo, msg, etc.)
   document.getElementById("modalDisparo").style.display = "none";
   document.getElementById("modalMsg").style.display = "none";
 
   // ── Criar transmissão no Firestore ──
-  const fotosArray = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
+  const fotosArray = _normalizarFotos(fotos);
   const payload = clientes.map(r => ({ telefone: r.telefone, mensagem: msgFn(r), nome: r.nome }));
 
   const destinatarios = clientes.map(r => ({
@@ -1394,78 +1408,59 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
     enviadoEm: null,
   }));
 
+  if (!currentUser || !db) {
+    mostrarToast("Erro: não foi possível registrar a transmissão", "err");
+    return;
+  }
+
   let transmissaoId = null;
-  let midiasUrls = []; // URLs das mídias no Storage (para persistir e reenviar)
 
   try {
-    if (currentUser && db) {
-      // Upload das mídias para o Firebase Storage (se houver)
-      if (fotosArray.length > 0) {
-        mostrarToast("Enviando mídias para o servidor...", "info");
-        for (const foto of fotosArray) {
-          try {
-            const mimeMatch = foto.match(/^data:([^;]+);/);
-            const mimetype = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-            const ext = mimetype.split("/")[1]?.replace("jpeg", "jpg").replace("quicktime", "mov") || "bin";
-            const prefix = mimetype.includes("pdf") ? "pdf" : mimetype.startsWith("video/") ? "video" : "foto";
-            const fileName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-            const ref = storage.ref(`transmissoes/${currentUser.uid}/${fileName}`);
-            const snapshot = await ref.putString(foto, "data_url");
-            const url = await snapshot.ref.getDownloadURL();
-            midiasUrls.push({ url, type: mimetype, name: fileName });
-          } catch (uploadErr) {
-            console.error("Erro ao fazer upload de mídia:", uploadErr.message);
-          }
-        }
-      }
-
-      const docRef = await db.collection("transmissoes").add({
-        titulo,
-        status: "em_andamento",
-        criadaEm: firebase.firestore.FieldValue.serverTimestamp(),
-        totalDestinatarios: clientes.length,
-        enviados: 0,
-        erros: 0,
-        pendentes: clientes.length,
-        mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
-        midias: midiasUrls, // salva URLs (não o base64)
-        destinatarios,
-        usuarioUid: currentUser.uid,
-        usuarioEmail: currentUser.email || null,
-        appVersion: window.APP_VERSION || "desconhecida",
-      });
-      transmissaoId = docRef.id;
-      console.log("📋 Transmissão criada:", transmissaoId);
-
-      const bytesEstimados = 500 + (clientes.length * 200);
-      await atualizarStorageUsado(bytesEstimados);
-    } else {
-      console.warn("⚠️ Transmissão não criada: currentUser=", !!currentUser, "db=", !!db);
-      mostrarToast("Erro: não foi possível registrar a transmissão", "err");
-      return;
-    }
+    // ── Cria a transmissão IMEDIATAMENTE (mídias entram depois, em background) ──
+    // Não faz upload para o Storage aqui — isso é o que travava a tela por
+    // vários segundos antes do usuário ver qualquer feedback.
+    const docRef = await db.collection("transmissoes").add({
+      titulo,
+      status: "em_andamento",
+      criadaEm: firebase.firestore.FieldValue.serverTimestamp(),
+      totalDestinatarios: clientes.length,
+      enviados: 0, erros: 0, pendentes: clientes.length,
+      mensagemTemplate: payload.length > 0 ? payload[0].mensagem : "",
+      midias: [],
+      destinatarios,
+      usuarioUid: currentUser.uid,
+      usuarioEmail: currentUser.email || null,
+      appVersion: window.APP_VERSION || "desconhecida",
+    });
+    transmissaoId = docRef.id;
   } catch (err) {
     console.error("❌ Erro ao criar transmissão no Firestore:", err.message);
     mostrarToast("Erro ao registrar transmissão: " + err.message, "err");
     return;
   }
 
-  // ── Navega para aba Transmissões e abre o modal de detalhes ──
+  // ── Navega e abre o modal de detalhes AGORA — antes de qualquer upload ──
+  // Assim o usuário vê o loading/progresso imediatamente, sem sensação de
+  // travamento enquanto o arquivo é processado.
   irPara("transmissoes");
-  // Pequeno delay para o onSnapshot capturar o novo doc antes de abrir
-  setTimeout(() => abrirDetalheTransmissao(transmissaoId), 500);
+  setTimeout(() => abrirDetalheTransmissao(transmissaoId), 300);
 
-  // ── Chama o backend para iniciar o envio em background ──
   window._transmissaoAtual = transmissaoId;
   window._transmissaoIndicesPendentes = null;
   disparoClientesRef = clientes;
 
+  // ── Dispara o envio já com as mídias originais (data URL/URL) ──
+  // O backend aceita data URL direto — não precisa esperar o Storage.
   let data;
   try {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: payload, fotos: midiasUrls.length > 0 ? midiasUrls.map(m => m.url) : fotosArray, transmissaoId })
+      body: JSON.stringify({
+        mensagens: payload,
+        fotos: fotosArray,
+        transmissaoId
+      })
     });
 
     if (!res.ok) {
@@ -1484,6 +1479,68 @@ async function enviarViaBackend(titulo, clientes, msgFn, fotos = []) {
   }
 
   disparoJobAtual = data.jobId;
+
+  const bytesEstimados = 500 + (clientes.length * 200);
+  await atualizarStorageUsado(bytesEstimados);
+
+  // ── Upload das mídias para o Storage em BACKGROUND ──
+  // Não bloqueia o envio nem a navegação — serve só para persistir os
+  // arquivos e permitir reenvio/continuar depois. Atualiza o Firestore (e o
+  // modal, se ainda estiver aberto na mesma transmissão) quando terminar.
+  if (fotosArray.length > 0) {
+    _uploadMidiasTransmissaoBackground(transmissaoId, fotosArray);
+  }
+}
+
+// ── Upload de mídias de uma transmissão para o Storage, em background ──
+// Não bloqueia o fluxo de envio: roda depois que o job já foi disparado.
+async function _uploadMidiasTransmissaoBackground(transmissaoId, fotosArray) {
+  const midiasUrls = [];
+  let bytesFotos = 0;
+
+  for (const foto of fotosArray) {
+    try {
+      const srcUrl   = foto.url;
+      const origName = foto.name || '';
+      if (srcUrl.startsWith('https://')) {
+        midiasUrls.push({ url: srcUrl, name: origName });
+        continue;
+      }
+      const mimeMatch = srcUrl.match(/^data:([^;]+);/);
+      const mimetype  = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+      const ext       = _mimeToExt(mimetype);
+      const prefix    = mimetype.includes("pdf") ? "pdf" : mimetype.startsWith("video/") ? "video" : mimetype.startsWith("image/") ? "foto" : "doc";
+      const nomeBase  = origName
+        ? origName.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\s+/g, '_')
+        : `${prefix}_${Date.now()}.${ext}`;
+      const fileName  = `${Date.now()}_${nomeBase}`;
+      const ref       = storage.ref(`transmissoes/${currentUser.uid}/${fileName}`);
+      const snapshot  = await ref.putString(srcUrl, "data_url");
+      const url       = await snapshot.ref.getDownloadURL();
+      const tamanho   = snapshot.metadata.size || 0;
+      midiasUrls.push({ url, type: mimetype, name: origName, size: tamanho });
+      bytesFotos += tamanho;
+    } catch (uploadErr) {
+      console.error("Erro ao fazer upload de mídia (background):", uploadErr.message);
+    }
+  }
+
+  if (midiasUrls.length > 0 && db) {
+    try {
+      await db.collection("transmissoes").doc(transmissaoId).update({ midias: midiasUrls });
+      // Se o modal de detalhes dessa mesma transmissão ainda estiver aberto,
+      // atualiza a prévia de mídias sem precisar recarregar nada.
+      if (_transDetalheId === transmissaoId && _transDetalheData) {
+        _transDetalheData.midias = midiasUrls;
+        transMidias = [...midiasUrls];
+        renderizarPreviewMidiasTransmissao();
+      }
+    } catch (err) {
+      console.error("Erro ao salvar mídias da transmissão:", err.message);
+    }
+  }
+
+  if (bytesFotos > 0) await atualizarStorageUsado(bytesFotos);
 }
 
 // ── Retomar transmissão pendente/pausada ──
@@ -1553,14 +1610,12 @@ async function retomarTransmissao(transmissaoId, midiasExternas) {
   // Atualiza status para em_andamento
   try { await db.collection("transmissoes").doc(transmissaoId).update({ status: "em_andamento" }); } catch(_) {}
 
-  // Mídias: usa as passadas como parâmetro ou as salvas no Firestore (extrai URLs)
-  let fotosParaEnviar = [];
-  if (Array.isArray(midiasExternas) && midiasExternas.length > 0) {
-    fotosParaEnviar = midiasExternas;
-  } else if (Array.isArray(trans.midias) && trans.midias.length > 0) {
-    // midias pode ser array de objetos {url, type, name} ou array de strings
-    fotosParaEnviar = trans.midias.map(m => typeof m === "object" ? m.url : m).filter(Boolean);
-  }
+  // Mídias: usa as passadas como parâmetro ou as salvas no Firestore
+  const fotosParaEnviar = _normalizarFotos(
+    (Array.isArray(midiasExternas) && midiasExternas.length > 0)
+      ? midiasExternas
+      : (trans.midias || [])
+  );
 
   // Monta payload só dos pendentes
   const payload = pendentes.map(r => ({ telefone: r.telefone, mensagem: trans.mensagemTemplate, nome: r.nome }));
@@ -2116,8 +2171,9 @@ async function _executarAutoDelete() {
       if (criadaEm && criadaEm < seteDiasAtras && !data.fixada) {
         const total = data.totalDestinatarios || 0;
         const midiasDel = Array.isArray(data.midias) ? data.midias : [];
-        const bytesFotosDel = midiasDel.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
-        const bytes = 500 + (total * 200) + bytesFotosDel;
+        // Remove os arquivos reais do Storage (fotos/vídeos/PDFs anexados)
+        const bytesMidias = await _deletarMidiasStorage(midiasDel);
+        const bytes = 500 + (total * 200) + bytesMidias;
         await doc.ref.delete();
         await atualizarStorageUsado(-bytes);
         deletados++;
@@ -2265,7 +2321,7 @@ function adicionarMidiaTransmissao(input) {
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      transMidias.push(e.target.result);
+      transMidias.push({ dataUrl: e.target.result, name: file.name });
       renderizarPreviewMidiasTransmissao();
     };
     reader.readAsDataURL(file);
@@ -2283,17 +2339,15 @@ function renderizarPreviewMidiasTransmissao() {
   if (!lista) return;
   lista.innerHTML = "";
   transMidias.forEach((midia, idx) => {
-    // Suporta tanto objetos {url, type, name} quanto strings (data URL ou URL)
-    const url = typeof midia === "object" ? midia.url : midia;
+    // Suporta objetos {url, type, name}, {dataUrl, name} e strings
+    const url = typeof midia === "object" ? (midia.url || midia.dataUrl || '') : midia;
     const type = typeof midia === "object" ? (midia.type || "") : "";
-    // Nome real do arquivo: usa o salvo (midia.name) ou extrai da URL/data URL
-    const nomeArquivo = typeof midia === "object" && midia.name
-      ? midia.name
-      : (url.split("/").pop() || "").split("?")[0].split("#")[0] || "arquivo";
+    // Nome real do arquivo: usa o salvo ou extrai da URL do Firebase Storage
+    let nomeArquivo = _extrairNomeArquivo(midia.name || '', url);
 
-    const isPdf = type.includes("pdf") || url.includes(".pdf");
-    const isVideo = type.startsWith("video/") || url.includes(".mp4") || url.includes(".mov");
-    const isImage = type.startsWith("image/") || url.match(/\.(jpg|jpeg|png|gif|webp)/i);
+    const isPdf = type.includes("pdf") || ehPdf(midia);
+    const isVideo = ehVideo(midia);
+    const isImage = ehImagem(midia);
 
     const item = document.createElement("div");
     item.className = "disparo-midia-item";
@@ -2386,6 +2440,30 @@ async function transEditarMensagem() {
   }
 }
 
+// ── Remove do Firebase Storage os arquivos anexados a uma transmissão ──
+// Evita que fotos/vídeos/PDFs enviados numa transmissão fiquem "órfãos"
+// ocupando espaço no Storage depois que a transmissão é apagada.
+async function _deletarMidiasStorage(midias) {
+  if (!Array.isArray(midias) || midias.length === 0) return 0;
+  let bytesLiberados = 0;
+  for (const m of midias) {
+    const url = typeof m === 'object' && m !== null ? m.url : m;
+    if (typeof url !== 'string' || !url.startsWith('https://firebasestorage')) continue;
+    try {
+      const fileRef = storage.refFromURL(url);
+      let bytes = (typeof m === 'object' && m.size) ? m.size : 0;
+      if (!bytes) {
+        try { const meta = await fileRef.getMetadata(); bytes = meta.size || 0; } catch (_) {}
+      }
+      await fileRef.delete();
+      bytesLiberados += bytes;
+    } catch (err) {
+      console.warn('Falha ao deletar mídia da transmissão no Storage:', err.code, url);
+    }
+  }
+  return bytesLiberados;
+}
+
 // ── Deletar transmissão ──
 async function transDeletar() {
   if (!_transDetalheId || !db) return;
@@ -2394,13 +2472,14 @@ async function transDeletar() {
   if (!confirmado) return;
 
   try {
-    // Calcula bytes para subtrair do storage (estrutura + fotos)
     const total = _transDetalheData?.totalDestinatarios || 0;
     const midiasSalvas = Array.isArray(_transDetalheData?.midias) ? _transDetalheData.midias : [];
-    const bytesFotos = midiasSalvas.reduce((acc, f) => acc + (typeof f === 'string' ? f.length : 0), 0);
-    const bytesEstimados = 500 + (total * 200) + bytesFotos;
+
+    // Remove os arquivos reais do Storage (fotos/vídeos/PDFs anexados)
+    const bytesMidias = await _deletarMidiasStorage(midiasSalvas);
 
     await db.collection("transmissoes").doc(_transDetalheId).delete();
+    const bytesEstimados = 500 + (total * 200) + bytesMidias;
     await atualizarStorageUsado(-bytesEstimados);
 
     fecharModalTransmissao();
@@ -2444,8 +2523,11 @@ async function transContinuar() {
   // Salva a mensagem atual do textarea antes de enviar
   const mensagemAtual = (document.getElementById("trans-detalhe-mensagem")?.value || "").trim();
 
-  // Captura mídias ANTES de fecharModalTransmissao limpar o array
-  const midiasParaEnviar = [...transMidias];
+  // Captura mídias — faz upload de dataURLs antes de salvar no Firestore
+  let midiasParaEnviar = _normalizarFotos(transMidias);
+  if (midiasParaEnviar.some(m => m.url.startsWith('data:'))) {
+    midiasParaEnviar = await uploadFotos(transMidias, "transmissoes");
+  }
 
   if (db) {
     try {
@@ -2669,7 +2751,7 @@ async function transReenviarIndividual(idx) {
     const res = await fetch(`${API_BASE}/api/send-batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: [{ telefone: d.telefone, mensagem, nome: d.nome }], fotos: transMidias.length > 0 ? [...transMidias] : (Array.isArray(_transDetalheData?.midias) ? _transDetalheData.midias : []), transmissaoId: idParaRetomar })
+      body: JSON.stringify({ mensagens: [{ telefone: d.telefone, mensagem, nome: d.nome }], fotos: _normalizarFotos(transMidias.length > 0 ? transMidias : (_transDetalheData?.midias || [])), transmissaoId: idParaRetomar })
     });
     if (!res.ok) {
       let errMsg = `Erro ${res.status}`;
@@ -2801,8 +2883,12 @@ async function transReenviar() {
   );
   if (!confirmado) return;
 
-  // Captura mídias ANTES de fecharModalTransmissao limpar o array
-  const midiasParaEnviar = [...transMidias];
+  // Captura mídias — faz upload de dataURLs para o Storage antes de salvar no Firestore
+  let midiasParaEnviar = _normalizarFotos(transMidias);
+  if (midiasParaEnviar.some(m => m.url.startsWith('data:'))) {
+    mostrarToast("Enviando mídias...", "info");
+    midiasParaEnviar = await uploadFotos(transMidias, "transmissoes");
+  }
 
   try {
     // Reseta todos para pendente
@@ -3176,6 +3262,45 @@ function ehImagem(src) {
 }
 
 // ---- Storage Helpers ----
+function _extrairNomeArquivo(name, url) {
+  // Tenta o campo name primeiro
+  let n = name || '';
+  // Se parece um path codificado ou path completo, extrai só o filename
+  if (n.includes('%2F') || n.includes('/')) {
+    try { n = decodeURIComponent(n).split('/').pop(); } catch(_) { n = n.split('/').pop(); }
+  }
+  // Se ainda vazio, extrai da URL do Firebase Storage
+  if (!n && url && url.startsWith('https://')) {
+    try {
+      const semQuery = url.split('?')[0];
+      const match = semQuery.match(/\/o\/(.+)$/);
+      const pathBruto = match ? match[1] : semQuery.split('/').pop();
+      n = decodeURIComponent(pathBruto).split('/').pop();
+    } catch(_) {}
+  }
+  // Remove prefixo de timestamp: "1786141974382_nome.ext" → "nome.ext"
+  n = (n || '').replace(/^\d{10,}_/, '');
+  return n || 'arquivo';
+}
+
+function _mimeToExt(mime) {
+  const map = {
+    'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+    'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp',
+    'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+    'video/x-msvideo': 'avi', 'video/x-matroska': 'mkv',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'text/plain': 'txt', 'text/csv': 'csv',
+  };
+  return map[mime] || mime.split('/')[1]?.split(';')[0] || 'bin';
+}
+
 function calcularTamanhoBase64(dataUrl) {
   const base64 = dataUrl.split(",")[1] || dataUrl;
   return Math.round(base64.length * 0.75);
@@ -3216,7 +3341,9 @@ async function recalcularStorageTotal() {
 }
 
 // ---- Upload de fotos/vídeos para Firebase Storage ----
-async function uploadFotos(fotosArray) {
+// pasta: "fotos" (propriedades, padrão) ou "transmissoes" (disparos em massa)
+// — mantém os dois tipos de mídia em pastas separadas no Storage.
+async function uploadFotos(fotosArray, pasta = "fotos") {
   const urls = [];
   let totalBytes = 0;
   for (const foto of fotosArray) {
@@ -3234,16 +3361,16 @@ async function uploadFotos(fotosArray) {
       const origName  = typeof foto === 'object' ? (foto.name || '') : '';
       const mimeMatch = dataUrl.match(/^data:([^;]+);/);
       const mimetype  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-      const ext       = mimetype.split('/')[1]?.replace('jpeg','jpg').replace('quicktime','mov').replace('vnd.openxmlformats-officedocument.wordprocessingml.document','docx').replace('vnd.openxmlformats-officedocument.spreadsheetml.sheet','xlsx') || 'bin';
+      const ext       = _mimeToExt(mimetype);
       // Usa nome original do arquivo (sanitizado) ou gera um nome técnico como fallback
       const nomeBase  = origName
         ? origName.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\s+/g, '_')
         : `arquivo_${Date.now()}.${ext}`;
       const fileName  = `${Date.now()}_${nomeBase}`;
-      const ref       = storage.ref(`fotos/${currentUser.uid}/${fileName}`);
+      const ref       = storage.ref(`${pasta}/${currentUser.uid}/${fileName}`);
       const snapshot  = await ref.putString(dataUrl, "data_url");
       const url       = await snapshot.ref.getDownloadURL();
-      const tamanho   = calcularTamanhoBase64(dataUrl);
+      const tamanho   = snapshot.metadata.size || calcularTamanhoBase64(dataUrl);
       urls.push({ url, size: tamanho, type: mimetype, name: origName || fileName });
       totalBytes += tamanho;
     } catch (err) {
@@ -3526,7 +3653,7 @@ function adicionarMidiaDisparo(input) {
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      disparoMidias.push(e.target.result);
+      disparoMidias.push({ dataUrl: e.target.result, name: file.name });
       renderizarPreviewMidias();
     };
     reader.readAsDataURL(file);
@@ -3543,10 +3670,13 @@ function renderizarPreviewMidias() {
   const lista = document.getElementById("disparo-midia-list");
   if (!lista) return;
   lista.innerHTML = "";
-  disparoMidias.forEach((dataUrl, idx) => {
+  disparoMidias.forEach((midia, idx) => {
+    const dataUrl = typeof midia === 'object' ? midia.dataUrl : midia;
+    const nome    = typeof midia === 'object' ? (midia.name || '') : '';
     const isVideo = dataUrl.startsWith("data:video");
-    const isPdf = dataUrl.startsWith("data:application/pdf");
+    const isPdf   = dataUrl.startsWith("data:application/pdf");
     const isImage = dataUrl.startsWith("data:image");
+    const nomeHtml = nome ? `<span class="disparo-midia-nome" title="${_esc(nome)}">${_esc(nome)}</span>` : '';
     const item = document.createElement("div");
     item.className = "disparo-midia-item";
     if (isPdf) {
@@ -3554,6 +3684,7 @@ function renderizarPreviewMidias() {
         <div class="disparo-midia-thumb disparo-midia-pdf">
           <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/><text x="7" y="17" font-size="5" fill="#fff" font-weight="bold">PDF</text></svg>
         </div>
+        ${nomeHtml}
         <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
       `;
     } else if (isVideo) {
@@ -3561,6 +3692,7 @@ function renderizarPreviewMidias() {
         <div class="disparo-midia-thumb disparo-midia-video">
           <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
+        ${nomeHtml}
         <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
       `;
     } else if (isImage) {
@@ -3573,6 +3705,7 @@ function renderizarPreviewMidias() {
         <div class="disparo-midia-thumb disparo-midia-doc">
           <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8" fill="none" stroke="#fff" stroke-width="1.5"/></svg>
         </div>
+        ${nomeHtml}
         <button class="disparo-midia-remove" onclick="removerMidiaDisparo(${idx})" title="Remover">✕</button>
       `;
     }

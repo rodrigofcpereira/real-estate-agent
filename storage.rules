@@ -33,6 +33,28 @@ service firebase.storage {
                     && request.auth.uid == userId;
     }
 
+    // ── Mídias de transmissões (disparos) ────────────────────────────────────
+    match /transmissoes/{userId}/{fileName} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+                  && request.auth.uid == userId
+                  && (
+                    (request.resource.contentType.matches('image/.*')
+                     && request.resource.size <= 10 * 1024 * 1024)
+                    ||
+                    (request.resource.contentType.matches('video/.*')
+                     && request.resource.size <= 200 * 1024 * 1024)
+                    ||
+                    (request.resource.contentType.matches('application/.*')
+                     && request.resource.size <= 20 * 1024 * 1024)
+                  );
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+
     // ── Downloads públicos (instaladores DMG / EXE) ───────────────────────────
     // Arquivos na raiz do bucket são de leitura pública.
     // Escrita ocorre exclusivamente via service account no deploy.sh
